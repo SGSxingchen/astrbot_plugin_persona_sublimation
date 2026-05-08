@@ -451,6 +451,363 @@ class PersonaSublimationPlugin(Star):
         except (TypeError, json.JSONDecodeError):
             return default
 
+    def _table_exists(self, conn: sqlite3.Connection, table_name: str) -> bool:
+        return bool(
+            conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                (table_name,),
+            ).fetchone()
+        )
+
+    def _infer_module_role(self, template_id: str, name: str = "") -> str:
+        value = f"{template_id} {name}".lower()
+        if "meta_preamble" in value or "preamble" in value:
+            return "meta"
+        if "system_rules" in value or "system-rule" in value:
+            return "system"
+        if "nsfw" in value:
+            return "nsfw"
+        if "roleplay" in value:
+            return "roleplay"
+        if "pending_ops" in value or "_ops" in value or "ops" in value:
+            return "ops"
+        if "persona_" in value or "persona-" in value:
+            return "persona"
+        return "custom"
+
+    def _normalize_template_metadata(
+        self,
+        *,
+        template_id: str,
+        name: str,
+        content: str,
+        metadata: Any,
+    ) -> dict[str, Any]:
+        """Normalize persona_templates as module assets while keeping table compatibility."""
+        normalized = dict(metadata) if isinstance(metadata, dict) else {}
+        previous_kind = str(normalized.get("kind") or "").strip()
+        if previous_kind and previous_kind != "module":
+            normalized.setdefault("legacy_kind", previous_kind)
+        normalized["kind"] = "module"
+        normalized.setdefault("source", "manual")
+        normalized.setdefault("module_id", template_id)
+        normalized.setdefault("role", self._infer_module_role(template_id, name))
+        normalized["content_sha256"] = self._sha256_text(content)
+        return normalized
+
+    def _legacy_patch_stable_id(self, persona_id: str, patch: dict[str, Any]) -> str:
+        explicit = str(patch.get("patch_id") or "").strip()
+        if explicit:
+            return explicit
+        payload = self._json(
+            {
+                "persona_id": persona_id,
+                "status": patch.get("status") or "pending",
+                "trigger": patch.get("trigger") or "",
+                "changes": patch.get("changes", []) or [],
+                "core_preserved": patch.get("core_preserved", []) or [],
+                "approved_by": patch.get("approved_by"),
+                "applied_at": patch.get("applied_at"),
+            }
+        )
+        return f"skill-patch-{self._safe_id_part(persona_id)}-{self._sha256_text(payload)[:12]}"
+
+    def _default_lingjiu_module_specs(self) -> list[tuple[str, str, int]]:
+        return [
+            ("skill-persona_lingjiu-2", "persona", 10),
+            ("skill-meta_preamble", "meta", 20),
+            ("skill-system_rules", "system", 30),
+            ("skill-nsfw_module", "nsfw", 40),
+            ("skill-roleplay_module", "roleplay", 50),
+            ("skill-pending_ops_module_lingjiu-2", "ops", 60),
+            ("skill-persona_intimate_lingjiu-2", "persona", 70),
+        ]
+
+    def _build_data_summary(self) -> dict[str, Any]:
+        """Return schema and data health summary without prompt/content bodies."""
+        target_tables = [
+            "llm_request_captures",
+            "captures",
+            "persona_observations",
+            "persona_patches",
+            "persona_templates",
+            "persona_snapshots",
+            "persona_profiles",
+            "persona_module_links",
+        ]
+        summary: dict[str, Any] = {"db_path": str(self.db_path), "tables": {}}
+        with self._lock, self._connect() as conn:
+            for table in target_tables:
+                if not self._table_exists(conn, table):
+                    summary["tables"][table] = {"exists": False}
+                    continue
+                columns = [
+                    {
+                        "name": row["name"],
+                        "type": row["type"],
+                        "notnull": bool(row["notnull"]),
+                    }
+                    for row in conn.execute(f"PRAGMA table_info({table})")
+                ]
+                item: dict[str, Any] = {
+                    "exists": True,
+                    "columns": columns,
+                    "count": int(
+                        conn.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()[
+                            "c"
+                        ]
+                    ),
+                }
+                column_names = {column["name"] for column in columns}
+                if "persona_id" in column_names:
+                    item["persona_distribution"] = [
+                        dict(row)
+                        for row in conn.execute(
+                            f"""
+                            SELECT COALESCE(NULLIF(persona_id, ''), '(empty)') AS persona_id,
+                                   COUNT(*) AS count
+                            FROM {table}
+                            GROUP BY COALESCE(NULLIF(persona_id, ''), '(empty)')
+                            ORDER BY count DESC, persona_id
+                            LIMIT 100
+                            """
+                        )
+                    ]
+                summary["tables"][table] = item
+
+            if self._table_exists(conn, "persona_templates"):
+                templates = []
+                material_legacy_count = 0
+                for row in conn.execute(
+                    """
+                    SELECT template_id, name, description, content, metadata_json
+                    FROM persona_templates
+                    ORDER BY template_id
+                    """
+                ):
+                    metadata = self._loads(row["metadata_json"], {})
+                    haystack = self._json(metadata) + row["name"] + row["description"]
+                    if "素材" in haystack or "material" in haystack.lower():
+                        material_legacy_count += 1
+                    content = row["content"] or ""
+                    templates.append(
+                        {
+                            "template_id": row["template_id"],
+                            "name": row["name"],
+                            "content_len": len(content),
+                            "content_sha256_prefix": self._sha256_text(content)[:12],
+                            "metadata_kind": metadata.get("kind"),
+                            "metadata_source": metadata.get("source"),
+                            "metadata_role": metadata.get("role"),
+                            "module_id": metadata.get("module_id"),
+                        }
+                    )
+                summary["templates"] = templates
+                summary["legacy_material_mentions"] = material_legacy_count
+
+            summary["duplicates"] = self._find_duplicate_groups(conn)
+        return summary
+
+    def _find_duplicate_groups(
+        self, conn: sqlite3.Connection
+    ) -> dict[str, list[dict[str, Any]]]:
+        duplicates: dict[str, list[dict[str, Any]]] = {
+            "observations": [],
+            "snapshots": [],
+            "patch_candidates": [],
+        }
+        if self._table_exists(conn, "persona_observations"):
+            groups: dict[tuple[str, str, str], list[int]] = {}
+            for row in conn.execute(
+                "SELECT id, persona_id, source, content FROM persona_observations"
+            ):
+                sha = self._sha256_text(row["content"] or "")
+                key = (row["persona_id"] or "", row["source"] or "", sha)
+                groups.setdefault(key, []).append(int(row["id"]))
+            duplicates["observations"] = [
+                {
+                    "persona_id": persona_id,
+                    "source": source,
+                    "content_sha256_prefix": sha[:12],
+                    "count": len(ids),
+                    "ids": ids,
+                }
+                for (persona_id, source, sha), ids in groups.items()
+                if len(ids) > 1
+            ]
+
+        if self._table_exists(conn, "persona_snapshots"):
+            groups: dict[tuple[str, str, str, str], list[int]] = {}
+            for row in conn.execute(
+                "SELECT id, persona_id, source, source_path, content, content_sha256 FROM persona_snapshots"
+            ):
+                sha = row["content_sha256"] or self._sha256_text(row["content"] or "")
+                key = (
+                    row["persona_id"] or "",
+                    row["source"] or "",
+                    row["source_path"] or "",
+                    sha,
+                )
+                groups.setdefault(key, []).append(int(row["id"]))
+            duplicates["snapshots"] = [
+                {
+                    "persona_id": persona_id,
+                    "source": source,
+                    "source_path_sha256_prefix": self._sha256_text(source_path)[:12],
+                    "content_sha256_prefix": sha[:12],
+                    "count": len(ids),
+                    "ids": ids,
+                }
+                for (persona_id, source, source_path, sha), ids in groups.items()
+                if len(ids) > 1
+            ]
+
+        if self._table_exists(conn, "persona_patches"):
+            groups: dict[str, list[str]] = {}
+            for row in conn.execute(
+                """
+                SELECT patch_id, persona_id, trigger, changes_json, core_preserved_json,
+                       proposed_prompt, base_prompt
+                FROM persona_patches
+                """
+            ):
+                payload = self._json(
+                    [
+                        row["persona_id"],
+                        row["trigger"],
+                        row["changes_json"],
+                        row["core_preserved_json"],
+                        row["proposed_prompt"],
+                        row["base_prompt"],
+                    ]
+                )
+                groups.setdefault(self._sha256_text(payload), []).append(
+                    row["patch_id"]
+                )
+            duplicates["patch_candidates"] = [
+                {
+                    "fingerprint_prefix": sha[:12],
+                    "count": len(patch_ids),
+                    "patch_ids": patch_ids,
+                    "note": "仅提示疑似重复；cleanup 不删除 patch 历史",
+                }
+                for sha, patch_ids in groups.items()
+                if len(patch_ids) > 1
+            ]
+        return duplicates
+
+    def _cleanup_data_model(self, *, dry_run: bool = True) -> dict[str, Any]:
+        """Idempotently normalize data-model metadata and safe duplicates."""
+        result: dict[str, Any] = {
+            "dry_run": dry_run,
+            "normalized_templates": [],
+            "inserted_module_links": [],
+            "updated_module_link_roles": [],
+            "deleted_observation_ids": [],
+            "deleted_snapshot_ids": [],
+            "patch_history_deleted": 0,
+        }
+        with self._lock, self._connect() as conn:
+            if self._table_exists(conn, "persona_templates"):
+                for row in conn.execute(
+                    "SELECT template_id, name, content, metadata_json FROM persona_templates"
+                ).fetchall():
+                    metadata = self._loads(row["metadata_json"], {})
+                    normalized = self._normalize_template_metadata(
+                        template_id=row["template_id"],
+                        name=row["name"],
+                        content=row["content"] or "",
+                        metadata=metadata,
+                    )
+                    if normalized != metadata:
+                        result["normalized_templates"].append(row["template_id"])
+                        if not dry_run:
+                            conn.execute(
+                                """
+                                UPDATE persona_templates
+                                SET metadata_json = ?
+                                WHERE template_id = ?
+                                """,
+                                (self._json(normalized), row["template_id"]),
+                            )
+
+            if self._table_exists(conn, "persona_module_links") and self._table_exists(
+                conn, "persona_templates"
+            ):
+                _, iso = self._now()
+                for (
+                    template_id,
+                    role,
+                    order_index,
+                ) in self._default_lingjiu_module_specs():
+                    exists = conn.execute(
+                        "SELECT 1 FROM persona_templates WHERE template_id = ?",
+                        (template_id,),
+                    ).fetchone()
+                    if not exists:
+                        continue
+                    link = conn.execute(
+                        """
+                        SELECT id, role FROM persona_module_links
+                        WHERE persona_id = 'lingjiu-2' AND template_id = ?
+                        """,
+                        (template_id,),
+                    ).fetchone()
+                    if not link:
+                        result["inserted_module_links"].append(template_id)
+                        if not dry_run:
+                            conn.execute(
+                                """
+                                INSERT INTO persona_module_links
+                                (persona_id, template_id, role, enabled, order_index, notes,
+                                 created_at, updated_at, metadata_json)
+                                VALUES ('lingjiu-2', ?, ?, 1, ?,
+                                        '默认模块装配关系；不会自动写入 AstrBot persona',
+                                        ?, ?, ?)
+                                """,
+                                (
+                                    template_id,
+                                    role,
+                                    order_index,
+                                    iso,
+                                    iso,
+                                    self._json({"source": "data-cleanup"}),
+                                ),
+                            )
+                    elif not str(link["role"] or "").strip():
+                        result["updated_module_link_roles"].append(int(link["id"]))
+                        if not dry_run:
+                            conn.execute(
+                                """
+                                UPDATE persona_module_links
+                                SET role = ?, updated_at = ?
+                                WHERE id = ?
+                                """,
+                                (role, iso, int(link["id"])),
+                            )
+
+            duplicate_groups = self._find_duplicate_groups(conn)
+            for group in duplicate_groups["observations"]:
+                delete_ids = sorted(group["ids"])[1:]
+                result["deleted_observation_ids"].extend(delete_ids)
+                if delete_ids and not dry_run:
+                    conn.executemany(
+                        "DELETE FROM persona_observations WHERE id = ?",
+                        [(item_id,) for item_id in delete_ids],
+                    )
+            for group in duplicate_groups["snapshots"]:
+                delete_ids = sorted(group["ids"])[1:]
+                result["deleted_snapshot_ids"].extend(delete_ids)
+                if delete_ids and not dry_run:
+                    conn.executemany(
+                        "DELETE FROM persona_snapshots WHERE id = ?",
+                        [(item_id,) for item_id in delete_ids],
+                    )
+
+            if not dry_run:
+                conn.commit()
+        return result
+
     async def _read_json(self, request: web.Request) -> dict[str, Any]:
         if not request.can_read_body:
             return {}
@@ -551,6 +908,7 @@ class PersonaSublimationPlugin(Star):
         sensitive = self._template_is_sensitive(item)
         summary = {
             "template_id": item.get("template_id"),
+            "module_id": item.get("template_id"),
             "name": item.get("name") or "",
             "description": item.get("description") or "",
             "timestamp_iso": item.get("timestamp_iso"),
@@ -567,7 +925,7 @@ class PersonaSublimationPlugin(Star):
             summary["content"] = content
         elif include_content and sensitive:
             summary["message"] = (
-                "该模板/模块被判定为敏感模块，LLM 工具默认不展开正文；请在前端由人类确认查看。"
+                "该模块被判定为敏感模块，LLM 工具默认不展开正文；请在前端由人类确认查看。"
             )
         return summary
 
@@ -587,6 +945,7 @@ class PersonaSublimationPlugin(Star):
             "metadata": self._loads(item.pop("template_metadata_json", None), {}),
         }
         item["template_id"] = template["template_id"]
+        item["module_id"] = template["template_id"]
         item["template"] = self._template_safe_summary(template, include_content)
         if include_content:
             item["template"]["_raw_content_for_patch"] = template["content"]
@@ -836,6 +1195,8 @@ class PersonaSublimationPlugin(Star):
         app.router.add_get("/api/captures", self.api_list_captures)
         app.router.add_get(r"/api/captures/{capture_id:\d+}", self.api_get_capture)
         app.router.add_get("/api/sessions", self.api_list_sessions)
+        app.router.add_get("/api/debug/data-summary", self.api_debug_data_summary)
+        app.router.add_post("/api/debug/cleanup", self.api_debug_cleanup)
         app.router.add_get("/api/personas", self.api_list_personas)
         app.router.add_get("/api/personas/{persona_id}", self.api_get_persona)
         app.router.add_get(
@@ -1028,6 +1389,17 @@ class PersonaSublimationPlugin(Star):
             }
         )
 
+    async def api_debug_data_summary(self, _request: web.Request) -> web.Response:
+        """Safe data summary: counts, ids, lengths and sha prefixes only."""
+        return web.json_response({"ok": True, "summary": self._build_data_summary()})
+
+    async def api_debug_cleanup(self, request: web.Request) -> web.Response:
+        data = await self._read_json(request)
+        dry_run = not self._explicit_true(data, "apply", "commit", "write")
+        return web.json_response(
+            {"ok": True, "result": self._cleanup_data_model(dry_run=dry_run)}
+        )
+
     def _now(self) -> tuple[float, str]:
         now = datetime.now(timezone.utc)
         return now.timestamp(), now.isoformat()
@@ -1098,10 +1470,13 @@ class PersonaSublimationPlugin(Star):
     async def api_link_persona_module(self, request: web.Request) -> web.Response:
         persona_id = request.match_info.get("persona_id", "").strip()
         data = await self._read_json(request)
-        template_id = str(data.get("template_id", "")).strip()
+        template_id = str(
+            data.get("module_id") or data.get("template_id") or ""
+        ).strip()
         if not persona_id or not template_id:
             return web.json_response(
-                {"ok": False, "error": "persona_id 和 template_id 必填"}, status=400
+                {"ok": False, "error": "persona_id 和 module_id/template_id 必填"},
+                status=400,
             )
         role = str(data.get("role") or data.get("kind") or "custom").strip()
         enabled = 1 if bool(data.get("enabled", True)) else 0
@@ -1115,7 +1490,7 @@ class PersonaSublimationPlugin(Star):
             ).fetchone()
             if not exists:
                 return web.json_response(
-                    {"ok": False, "error": "模板/模块不存在"}, status=404
+                    {"ok": False, "error": "模块不存在"}, status=404
                 )
             conn.execute(
                 """
@@ -1760,9 +2135,12 @@ class PersonaSublimationPlugin(Star):
             for patch in (
                 payload.get("patches", []) if isinstance(payload, dict) else []
             ):
-                patch_id = str(patch.get("patch_id") or self._next_patch_id(persona_id))
+                if not isinstance(patch, dict):
+                    continue
+                patch_id = self._legacy_patch_stable_id(persona_id, patch)
                 ts, iso = self._now()
                 with self._lock, self._connect() as conn:
+                    before = conn.total_changes
                     conn.execute(
                         """
                         INSERT OR IGNORE INTO persona_patches
@@ -1787,7 +2165,10 @@ class PersonaSublimationPlugin(Star):
                         ),
                     )
                     conn.commit()
-            migrated.append(str(patches))
+                    if conn.total_changes == before:
+                        skipped.append(f"{patches}#{patch_id}")
+                    else:
+                        migrated.append(f"{patches}#{patch_id}")
 
         for snapshot_file in skill_dir.glob("persona_current_*.md"):
             persona_id = snapshot_file.stem.removeprefix("persona_current_")
@@ -1838,16 +2219,20 @@ class PersonaSublimationPlugin(Star):
             stem = asset.stem
             template_id = f"skill-{self._safe_id_part(stem)}"
             ts, iso = self._now()
-            metadata = {
-                "source": "skill-migration",
-                "source_file": str(asset),
-                "content_sha256": self._sha256_text(content),
-                "kind": "module"
-                if stem.endswith("_module") or stem in {"meta_preamble", "system_rules"}
-                else "persona_template",
-                "deprecated_skill": "persona-evolution",
-            }
+            metadata = self._normalize_template_metadata(
+                template_id=template_id,
+                name=stem,
+                content=content,
+                metadata={
+                    "source": "skill-migration",
+                    "source_file": str(asset),
+                    "content_sha256": self._sha256_text(content),
+                    "role": self._infer_module_role(template_id, stem),
+                    "deprecated_skill": "persona-evolution",
+                },
+            )
             with self._lock, self._connect() as conn:
+                before = conn.total_changes
                 conn.execute(
                     """
                     INSERT INTO persona_templates
@@ -1889,10 +2274,7 @@ class PersonaSublimationPlugin(Star):
                         INSERT INTO persona_module_links
                         (persona_id, template_id, role, enabled, order_index, notes, created_at, updated_at, metadata_json)
                         VALUES ('lingjiu-2', ?, ?, 1, ?, '由旧 skill 迁移时建立的默认模块关联；不会自动写入 persona', ?, ?, ?)
-                        ON CONFLICT(persona_id, template_id) DO UPDATE SET
-                            role=excluded.role,
-                            order_index=excluded.order_index,
-                            updated_at=excluded.updated_at
+                        ON CONFLICT(persona_id, template_id) DO NOTHING
                         """,
                         (
                             template_id,
@@ -1904,9 +2286,15 @@ class PersonaSublimationPlugin(Star):
                         ),
                     )
                 conn.commit()
-            migrated.append(str(asset))
+                if conn.total_changes == before:
+                    skipped.append(str(asset))
+                else:
+                    migrated.append(str(asset))
 
-        return web.json_response({"ok": True, "migrated": migrated, "skipped": skipped})
+        cleanup = self._cleanup_data_model(dry_run=False)
+        return web.json_response(
+            {"ok": True, "migrated": migrated, "skipped": skipped, "cleanup": cleanup}
+        )
 
     async def api_list_snapshots(self, request: web.Request) -> web.Response:
         persona_id = request.query.get("persona_id", "").strip()
@@ -2122,9 +2510,7 @@ class PersonaSublimationPlugin(Star):
                 (template_id,),
             ).fetchone()
         if not row:
-            return web.json_response(
-                {"ok": False, "error": "模板/模块不存在"}, status=404
-            )
+            return web.json_response({"ok": False, "error": "模块不存在"}, status=404)
         item = dict(row)
         for key in ("variables_json", "metadata_json"):
             item[key.removesuffix("_json")] = self._loads(item.pop(key), None)
@@ -2133,7 +2519,8 @@ class PersonaSublimationPlugin(Star):
     async def api_create_template(self, request: web.Request) -> web.Response:
         data = await self._read_json(request)
         template_id = (
-            str(data.get("template_id", "")).strip() or self._next_template_id()
+            str(data.get("module_id") or data.get("template_id") or "").strip()
+            or self._next_template_id()
         )
         name = str(data.get("name", "")).strip()
         content = str(data.get("content", ""))
@@ -2142,6 +2529,12 @@ class PersonaSublimationPlugin(Star):
                 {"ok": False, "error": "name 和 content 必填"}, status=400
             )
         ts, iso = self._now()
+        metadata = self._normalize_template_metadata(
+            template_id=template_id,
+            name=name,
+            content=content,
+            metadata=data.get("metadata", {}) or {},
+        )
         with self._lock, self._connect() as conn:
             conn.execute(
                 """
@@ -2157,11 +2550,13 @@ class PersonaSublimationPlugin(Star):
                     str(data.get("description", "") or ""),
                     content,
                     self._json(data.get("variables", []) or []),
-                    self._json(data.get("metadata", {}) or {}),
+                    self._json(metadata),
                 ),
             )
             conn.commit()
-        return web.json_response({"ok": True, "template_id": template_id})
+        return web.json_response(
+            {"ok": True, "template_id": template_id, "module_id": template_id}
+        )
 
     async def api_update_template(self, request: web.Request) -> web.Response:
         template_id = request.match_info.get("template_id", "").strip()
@@ -2173,7 +2568,7 @@ class PersonaSublimationPlugin(Star):
             ).fetchone()
             if not row:
                 return web.json_response(
-                    {"ok": False, "error": "模板/模块不存在"}, status=404
+                    {"ok": False, "error": "模块不存在"}, status=404
                 )
             item = dict(row)
             item["variables"] = self._loads(item.pop("variables_json"), [])
@@ -2185,6 +2580,14 @@ class PersonaSublimationPlugin(Star):
             if isinstance(incoming_metadata, dict):
                 metadata.update(incoming_metadata)
             variables = data.get("variables", item.get("variables") or [])
+            name = str(data.get("name", item.get("name") or "") or "")
+            content = str(data.get("content", item.get("content") or "") or "")
+            metadata = self._normalize_template_metadata(
+                template_id=template_id,
+                name=name,
+                content=content,
+                metadata=metadata,
+            )
             _, iso = self._now()
             conn.execute(
                 """
@@ -2195,9 +2598,9 @@ class PersonaSublimationPlugin(Star):
                 """,
                 (
                     iso,
-                    str(data.get("name", item.get("name") or "") or ""),
+                    name,
                     str(data.get("description", item.get("description") or "") or ""),
-                    str(data.get("content", item.get("content") or "") or ""),
+                    content,
                     self._json(variables or []),
                     self._json(metadata),
                     template_id,
@@ -2222,14 +2625,20 @@ class PersonaSublimationPlugin(Star):
             ).fetchone()
             if not row:
                 return web.json_response(
-                    {"ok": False, "error": "模板/模块不存在"}, status=404
+                    {"ok": False, "error": "模块不存在"}, status=404
                 )
             conn.execute(
                 "DELETE FROM persona_templates WHERE template_id = ?",
                 (template_id,),
             )
             conn.commit()
-        return web.json_response({"ok": True, "deleted_template_id": template_id})
+        return web.json_response(
+            {
+                "ok": True,
+                "deleted_template_id": template_id,
+                "deleted_module_id": template_id,
+            }
+        )
 
     async def api_create_patch_from_template(
         self, request: web.Request
@@ -2247,9 +2656,7 @@ class PersonaSublimationPlugin(Star):
                 (template_id,),
             ).fetchone()
         if not row:
-            return web.json_response(
-                {"ok": False, "error": "模板/模块不存在"}, status=404
-            )
+            return web.json_response({"ok": False, "error": "模块不存在"}, status=404)
         template = dict(row)
         template["metadata"] = self._loads(template.pop("metadata_json"), {})
         template["variables"] = self._loads(template.pop("variables_json"), [])
@@ -2262,20 +2669,21 @@ class PersonaSublimationPlugin(Star):
                 "proposed_prompt": proposed_prompt,
                 "trigger": data.get(
                     "trigger",
-                    f"从模板/模块生成补丁草案：{template.get('name') or template_id}",
+                    f"从模块生成补丁草案：{template.get('name') or template_id}",
                 ),
                 "changes": data.get(
                     "changes",
                     [
                         {
-                            "aspect": "template",
+                            "aspect": "module",
                             "after": template_id,
-                            "reason": "人工从模板/模块生成补丁草案",
+                            "reason": "人工从模块生成补丁草案",
                         }
                     ],
                 ),
                 "metadata": {
-                    "source": "template",
+                    "source": "module",
+                    "module_id": template_id,
                     "template_id": template_id,
                     **(
                         data.get("metadata", {})
@@ -2289,7 +2697,7 @@ class PersonaSublimationPlugin(Star):
 
     def _next_template_id(self) -> str:
         ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-        return f"tpl-{ts}"
+        return f"mod-{ts}"
 
     async def api_list_profiles(self, _request: web.Request) -> web.Response:
         personas = await self.context.persona_manager.get_all_personas()
@@ -2546,7 +2954,7 @@ class PersonaSublimationPlugin(Star):
         persona_id: str,
         trigger: str,
         proposed_prompt: str = "",
-        changes: list | None = None,
+        changes_json: str = "",
         notes: str = "",
         base_prompt: str = "",
     ) -> dict[str, Any]:
@@ -2556,7 +2964,7 @@ class PersonaSublimationPlugin(Star):
             persona_id(string): 要起草调整的 persona_id，必须明确指定。
             trigger(string): 起草原因。
             proposed_prompt(string): 拟议 system_prompt；可为空，空则只记录结构化草案。
-            changes(array): 结构化调整项，可为空数组。
+            changes_json(string): 结构化调整项 JSON 字符串，例如 [{"aspect":"tone","after":"更短"}]；可为空。
             notes(string): 给人类审核者看的备注。
             base_prompt(string): 安全检查基线；可为空，空则取当前 persona prompt 作为基线。
         """
@@ -2564,7 +2972,9 @@ class PersonaSublimationPlugin(Star):
             data = {
                 "persona_id": str(persona_id or "").strip(),
                 "trigger": str(trigger or ""),
-                "changes": changes or [],
+                "changes": self._loads(str(changes_json or ""), [])
+                if str(changes_json or "").strip()
+                else [],
                 "notes": str(notes or ""),
                 "metadata": {"created_by": "llm_tool"},
             }
@@ -2729,11 +3139,11 @@ class PersonaSublimationPlugin(Star):
             ],
         }
 
-    @filter.llm_tool(name="persona_sublimation_list_templates")
-    async def tool_list_templates(
+    @filter.llm_tool(name="persona_sublimation_list_modules")
+    async def tool_list_modules(
         self, event: AstrMessageEvent, limit: int = 20
     ) -> dict[str, Any]:
-        """列出模板/模块摘要，不展开正文。
+        """列出模块摘要，不展开正文。
 
         Args:
             limit(number): 返回数量，默认 20，最多 100。
@@ -2756,27 +3166,27 @@ class PersonaSublimationPlugin(Star):
             items.append(self._template_safe_summary(item, include_content=False))
         return {"ok": True, "items": items}
 
-    @filter.llm_tool(name="persona_sublimation_get_template")
-    async def tool_get_template(
+    @filter.llm_tool(name="persona_sublimation_get_module")
+    async def tool_get_module(
         self,
         event: AstrMessageEvent,
-        template_id: str,
+        module_id: str,
         include_content: bool = False,
     ) -> dict[str, Any]:
-        """查看模板/模块；默认不展开正文，敏感模块即使请求展开也会隐藏。
+        """查看模块；默认不展开正文，敏感模块即使请求展开也会隐藏。
 
         Args:
-            template_id(string): template_id。
+            module_id(string): 模块 ID（兼容存储字段为 template_id）。
             include_content(boolean): 是否显式请求返回正文，默认 false；敏感模块仍不会展开。
         """
-        template_id = str(template_id or "").strip()
+        module_id = str(module_id or "").strip()
         with self._lock, self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM persona_templates WHERE template_id = ?",
-                (template_id,),
+                (module_id,),
             ).fetchone()
         if not row:
-            return {"ok": False, "error": "模板/模块不存在"}
+            return {"ok": False, "error": "模块不存在"}
         item = dict(row)
         for key in ("variables_json", "metadata_json"):
             item[key.removesuffix("_json")] = self._loads(item.pop(key), None)
@@ -2842,32 +3252,32 @@ class PersonaSublimationPlugin(Star):
         except Exception as exc:
             return {"ok": False, "error": f"由快照起草失败：{exc}"}
 
-    @filter.llm_tool(name="persona_sublimation_generate_patch_from_template")
-    async def tool_generate_patch_from_template(
+    @filter.llm_tool(name="persona_sublimation_create_patch_from_module")
+    async def tool_create_patch_from_module(
         self,
         event: AstrMessageEvent,
         persona_id: str,
-        template_id: str,
+        module_id: str,
         trigger: str = "",
     ) -> dict[str, Any]:
-        """由某个模板/模块起草 pending 调整，不审批也不应用。
+        """由某个模块起草 pending 调整，不审批也不应用。
 
         Args:
             persona_id(string): 要生成调整草案的目标 persona_id。
-            template_id(string): 模板/模块 ID。
+            module_id(string): 模块 ID（兼容存储字段为 template_id）。
             trigger(string): 起草原因，可为空。
         """
         persona_id = str(persona_id or "").strip()
-        template_id = str(template_id or "").strip()
-        if not persona_id or not template_id:
-            return {"ok": False, "error": "persona_id 和 template_id 必填"}
+        module_id = str(module_id or "").strip()
+        if not persona_id or not module_id:
+            return {"ok": False, "error": "persona_id 和 module_id 必填"}
         with self._lock, self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM persona_templates WHERE template_id = ?",
-                (template_id,),
+                (module_id,),
             ).fetchone()
         if not row:
-            return {"ok": False, "error": "模板/模块不存在"}
+            return {"ok": False, "error": "模块不存在"}
         template = dict(row)
         for key in ("variables_json", "metadata_json"):
             template[key.removesuffix("_json")] = self._loads(template.pop(key), None)
@@ -2877,17 +3287,18 @@ class PersonaSublimationPlugin(Star):
                     "persona_id": persona_id,
                     "proposed_prompt": str(template.get("content") or ""),
                     "trigger": trigger
-                    or f"由模板/模块起草调整：{template.get('name') or template_id}",
+                    or f"由模块起草调整：{template.get('name') or module_id}",
                     "changes": [
                         {
-                            "aspect": "template",
-                            "after": template_id,
-                            "reason": "LLM 工具由模板/模块起草，等待人类审核",
+                            "aspect": "module",
+                            "after": module_id,
+                            "reason": "LLM 工具由模块起草，等待人类审核",
                         }
                     ],
                     "metadata": {
                         "source": "llm_tool_template",
-                        "template_id": template_id,
+                        "module_id": module_id,
+                        "template_id": module_id,
                         "created_by": "llm_tool",
                     },
                 }
@@ -2896,10 +3307,10 @@ class PersonaSublimationPlugin(Star):
                 "ok": True,
                 **result,
                 "status": "pending",
-                "message": "已由模板/模块起草 pending 调整；请到前端由人类审批/应用。",
+                "message": "已由模块起草 pending 调整；请到前端由人类审批/应用。",
             }
         except Exception as exc:
-            return {"ok": False, "error": f"由模板/模块起草失败：{exc}"}
+            return {"ok": False, "error": f"由模块起草失败：{exc}"}
 
     @filter.llm_tool(name="persona_sublimation_list_persona_modules")
     async def tool_list_persona_modules(
@@ -2920,34 +3331,34 @@ class PersonaSublimationPlugin(Star):
         self,
         event: AstrMessageEvent,
         persona_id: str,
-        template_id: str,
+        module_id: str,
         role: str = "",
         enabled: bool = True,
         order_index: int = 0,
         notes: str = "",
     ) -> dict[str, Any]:
-        """把模板/模块资产关联到某个 persona；只记录装配关系，不修改 persona。
+        """把模块资产关联到某个 persona；只记录装配关系，不修改 persona。
 
         Args:
             persona_id(string): 目标 persona_id。
-            template_id(string): 要关联的模板/模块 ID。
+            module_id(string): 要关联的模块 ID（兼容存储字段为 template_id）。
             role(string): 模块角色，例如 meta/persona/system/nsfw/roleplay/ops/custom。
             enabled(boolean): 是否启用该关联。
             order_index(number): 模块顺序。
             notes(string): 备注。
         """
         persona_id = str(persona_id or "").strip()
-        template_id = str(template_id or "").strip()
-        if not persona_id or not template_id:
-            return {"ok": False, "error": "persona_id 和 template_id 必填"}
+        module_id = str(module_id or "").strip()
+        if not persona_id or not module_id:
+            return {"ok": False, "error": "persona_id 和 module_id 必填"}
         _, iso = self._now()
         with self._lock, self._connect() as conn:
             exists = conn.execute(
                 "SELECT 1 FROM persona_templates WHERE template_id = ?",
-                (template_id,),
+                (module_id,),
             ).fetchone()
             if not exists:
-                return {"ok": False, "error": "模板/模块不存在"}
+                return {"ok": False, "error": "模块不存在"}
             conn.execute(
                 """
                 INSERT INTO persona_module_links
@@ -2962,7 +3373,7 @@ class PersonaSublimationPlugin(Star):
                 """,
                 (
                     persona_id,
-                    template_id,
+                    module_id,
                     role or "custom",
                     1 if enabled else 0,
                     int(order_index or 0),
