@@ -29,6 +29,8 @@ http://127.0.0.1:7833/
 
 默认只监听本机。页面不依赖 AstrBot Dashboard，也不走 Dashboard 鉴权。
 
+如果维护者暂时关闭了插件，请不要通过 Dashboard、reload 或服务重启强行启用。仍可离线整理代码与数据模型：在独立 worktree 中运行静态检查、用临时 SQLite 验证迁移/cleanup/模块关联逻辑，等待维护者确认后再做实机验证。
+
 ## 前端人格工作台
 
 `GET /` 提供纯静态 HTML/JS/CSS 的人类工作台，无构建链。页面包含：
@@ -94,7 +96,7 @@ cleanup 只做保守操作：规范 `persona_templates.metadata.kind/source/role
 - `GET /api/personas`：AstrBot 当前 persona 列表，并展示 observation/patch 计数
 - `GET /api/personas/<persona_id>`：指定 persona 详情
 - `GET /api/personas/<persona_id>/modules`：列出当前 persona 的模块关联清单，带模块摘要
-- `POST /api/personas/<persona_id>/modules`：关联模块，body 包含 `template_id`、`role`、`enabled`、`order_index`、`notes`
+- `POST /api/personas/<persona_id>/modules`：关联模块，body 包含 `module_id`（兼容 `template_id`）、`role`、`enabled`、`order_index`、`notes`
 - `PATCH /api/personas/<persona_id>/modules/<link_id>`：调整模块关联的角色、启用状态、顺序、备注
 - `DELETE /api/personas/<persona_id>/modules/<link_id>`：解除关联，不删除模块本体
 - `POST /api/personas/<persona_id>/modules/patch`：由当前启用模块清单组合生成 pending patch，不直接应用
@@ -302,14 +304,14 @@ self.context.persona_manager.update_persona(
 - `persona_sublimation_get_patch(patch_id, include_content=false)`：查看调整；默认不返回完整 base/proposed prompt。
 - `persona_sublimation_create_snapshot(persona_id, label='', description='')`：留存当前人格快照，不修改 persona。
 - `persona_sublimation_list_snapshots(persona_id, limit=10)`：列快照摘要。
-- `persona_sublimation_list_templates(limit=20)`：列模块摘要，不展开正文。
-- `persona_sublimation_get_template(template_id, include_content=false)`：查看模块；默认不展开正文，敏感模块仍隐藏。
+- `persona_sublimation_list_modules(limit=20)`：列模块摘要，不展开正文。
+- `persona_sublimation_get_module(module_id, include_content=false)`：查看模块；默认不展开正文，敏感模块仍隐藏。
 - `persona_sublimation_list_persona_modules(persona_id)`：列当前 persona 的模块关联清单。
-- `persona_sublimation_link_module(persona_id, template_id, role='', enabled=true, order_index=0, notes='')`：把模块关联到 persona；只记录关系，不修改 persona。
+- `persona_sublimation_link_module(persona_id, module_id, role='', enabled=true, order_index=0, notes='')`：把模块关联到 persona；只记录关系，不修改 persona。
 - `persona_sublimation_unlink_module(persona_id, link_id)`：解除模块关联，不删除模块本体。
 - `persona_sublimation_create_patch_from_modules(persona_id, notes='')`：由当前启用模块清单起草 pending 调整。
 - `persona_sublimation_generate_patch_from_snapshot(persona_id, snapshot_id, trigger='')`：由快照起草 pending 调整。
-- `persona_sublimation_generate_patch_from_template(persona_id, template_id, trigger='')`：由模块起草 pending 调整。
+- `persona_sublimation_create_patch_from_module(persona_id, module_id, trigger='')`：由模块起草 pending 调整。
 
 代码中仍保留只读捕获 hook：
 
