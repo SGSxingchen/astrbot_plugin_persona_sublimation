@@ -25,6 +25,16 @@ MAX_DB_BYTES = 50 * 1024 * 1024
 PRUNE_SIZE_BATCH_ROWS = 50
 PRUNE_SIZE_MAX_BATCHES = 20
 PRUNE_MAX_SECONDS = 0.75
+MODULE_ROLE_ORDER = {
+    "meta": 10,
+    "persona": 20,
+    "system": 30,
+    "nsfw": 40,
+    "roleplay": 50,
+    "ops": 90,
+    "custom": 100,
+}
+SENSITIVE_MODULE_MARKERS = {"nsfw", "ops", "intimate"}
 
 
 @register(
@@ -463,6 +473,8 @@ class PersonaSublimationPlugin(Star):
         value = f"{template_id} {name}".lower()
         if "meta_preamble" in value or "preamble" in value:
             return "meta"
+        if "pending_ops_module" in value:
+            return "ops"
         if "system_rules" in value or "system-rule" in value:
             return "system"
         if "nsfw" in value:
@@ -474,6 +486,57 @@ class PersonaSublimationPlugin(Star):
         if "persona_" in value or "persona-" in value:
             return "persona"
         return "custom"
+
+    def _infer_module_source(self, template_id: str, metadata: dict[str, Any]) -> str:
+        value = " ".join(
+            [
+                template_id,
+                str(metadata.get("source_file") or ""),
+                str(metadata.get("deprecated_skill") or ""),
+            ]
+        ).lower()
+        if template_id.startswith("skill-") or "persona-evolution" in value:
+            return "skill-migration"
+        return "manual"
+
+    def _normalize_module_tags(
+        self, tags: Any, template_id: str, name: str, role: str
+    ) -> list[str]:
+        if isinstance(tags, list):
+            normalized = [str(tag).strip().lower() for tag in tags if str(tag).strip()]
+        elif isinstance(tags, str):
+            normalized = [
+                tag.strip().lower()
+                for tag in tags.replace(",", " ").split()
+                if tag.strip()
+            ]
+        else:
+            normalized = []
+        value = f"{template_id} {name} {role}".lower()
+        for marker in SENSITIVE_MODULE_MARKERS:
+            if marker in value and marker not in normalized:
+                normalized.append(marker)
+        return list(dict.fromkeys(normalized))
+
+    def _infer_recommended_order(
+        self, template_id: str, name: str, role: str, tags: list[str]
+    ) -> int:
+        value = f"{template_id} {name}".lower()
+        if "meta_preamble" in value:
+            return 10
+        if "persona_intimate" in value or "intimate" in tags:
+            return 25
+        if "persona_lingjiu-2" in value:
+            return 20
+        if "system_rules" in value:
+            return 30
+        if "nsfw_module" in value:
+            return 40
+        if "roleplay_module" in value:
+            return 50
+        if "pending_ops_module" in value:
+            return 90
+        return MODULE_ROLE_ORDER.get(role, MODULE_ROLE_ORDER["custom"])
 
     def _normalize_template_metadata(
         self,
@@ -489,11 +552,103 @@ class PersonaSublimationPlugin(Star):
         if previous_kind and previous_kind != "module":
             normalized.setdefault("legacy_kind", previous_kind)
         normalized["kind"] = "module"
-        normalized.setdefault("source", "manual")
-        normalized.setdefault("module_id", template_id)
-        normalized.setdefault("role", self._infer_module_role(template_id, name))
+        if not str(normalized.get("source") or "").strip():
+            normalized["source"] = self._infer_module_source(template_id, normalized)
+        if not str(normalized.get("module_id") or "").strip():
+            normalized["module_id"] = template_id
+        role = str(normalized.get("role") or "").strip().lower()
+        if not role:
+            role = self._infer_module_role(template_id, name)
+            normalized["role"] = role
+        tags = self._normalize_module_tags(
+            normalized.get("tags"), template_id, name, role
+        )
+        if tags:
+            normalized["tags"] = tags
+        raw_sensitive = normalized.get("sensitive", False)
+        if isinstance(raw_sensitive, str):
+            sensitive = raw_sensitive.strip().lower() in {"true", "1", "yes", "on"}
+        else:
+            sensitive = bool(raw_sensitive)
+        if role in SENSITIVE_MODULE_MARKERS or any(
+            tag in SENSITIVE_MODULE_MARKERS for tag in tags
+        ):
+            sensitive = True
+        normalized["sensitive"] = sensitive
+        if str(normalized.get("recommended_order") or "").strip() == "":
+            normalized["recommended_order"] = self._infer_recommended_order(
+                template_id, name, role, tags
+            )
         normalized["content_sha256"] = self._sha256_text(content)
         return normalized
+
+    def _module_metadata_diff(
+        self, before: dict[str, Any], after: dict[str, Any]
+    ) -> dict[str, dict[str, Any]]:
+        changes: dict[str, dict[str, Any]] = {}
+        for key in sorted(set(before) | set(after)):
+            before_value = before.get(key)
+            after_value = after.get(key)
+            if before_value != after_value:
+                changes[key] = {"before": before_value, "after": after_value}
+        return changes
+
+    def _normalize_module_metadata_records(
+        self, conn: sqlite3.Connection, *, dry_run: bool = True
+    ) -> dict[str, Any]:
+        """Normalize module metadata and return body-free diffs."""
+        result: dict[str, Any] = {"dry_run": dry_run, "changes": []}
+        if not self._table_exists(conn, "persona_templates"):
+            return result
+        for row in conn.execute(
+            """
+            SELECT template_id, name, content, metadata_json
+            FROM persona_templates
+            ORDER BY template_id
+            """
+        ).fetchall():
+            metadata = self._loads(row["metadata_json"], {})
+            metadata = metadata if isinstance(metadata, dict) else {}
+            normalized = self._normalize_template_metadata(
+                template_id=row["template_id"],
+                name=row["name"],
+                content=row["content"] or "",
+                metadata=metadata,
+            )
+            diff = self._module_metadata_diff(metadata, normalized)
+            if not diff:
+                continue
+            result["changes"].append(
+                {
+                    "template_id": row["template_id"],
+                    "module_id": normalized.get("module_id") or row["template_id"],
+                    "name": row["name"],
+                    "content_len": len(row["content"] or ""),
+                    "content_sha256_prefix": normalized.get("content_sha256", "")[:12],
+                    "changed_keys": sorted(diff),
+                    "metadata_diff": diff,
+                }
+            )
+            if not dry_run:
+                conn.execute(
+                    """
+                    UPDATE persona_templates
+                    SET metadata_json = ?
+                    WHERE template_id = ?
+                    """,
+                    (self._json(normalized), row["template_id"]),
+                )
+        return result
+
+    def _normalize_module_metadata_store(
+        self, *, dry_run: bool = True
+    ) -> dict[str, Any]:
+        """Maintenance entry point for module metadata normalization."""
+        with self._lock, self._connect() as conn:
+            result = self._normalize_module_metadata_records(conn, dry_run=dry_run)
+            if not dry_run:
+                conn.commit()
+        return result
 
     def _legacy_patch_stable_id(self, persona_id: str, patch: dict[str, Any]) -> str:
         explicit = str(patch.get("patch_id") or "").strip()
@@ -685,33 +840,19 @@ class PersonaSublimationPlugin(Star):
         result: dict[str, Any] = {
             "dry_run": dry_run,
             "normalized_templates": [],
+            "template_metadata_diffs": [],
             "deleted_observation_ids": [],
             "deleted_snapshot_ids": [],
             "patch_history_deleted": 0,
         }
         with self._lock, self._connect() as conn:
-            if self._table_exists(conn, "persona_templates"):
-                for row in conn.execute(
-                    "SELECT template_id, name, content, metadata_json FROM persona_templates"
-                ).fetchall():
-                    metadata = self._loads(row["metadata_json"], {})
-                    normalized = self._normalize_template_metadata(
-                        template_id=row["template_id"],
-                        name=row["name"],
-                        content=row["content"] or "",
-                        metadata=metadata,
-                    )
-                    if normalized != metadata:
-                        result["normalized_templates"].append(row["template_id"])
-                        if not dry_run:
-                            conn.execute(
-                                """
-                                UPDATE persona_templates
-                                SET metadata_json = ?
-                                WHERE template_id = ?
-                                """,
-                                (self._json(normalized), row["template_id"]),
-                            )
+            module_normalization = self._normalize_module_metadata_records(
+                conn, dry_run=dry_run
+            )
+            result["template_metadata_diffs"] = module_normalization["changes"]
+            result["normalized_templates"] = [
+                item["template_id"] for item in module_normalization["changes"]
+            ]
 
             duplicate_groups = self._find_duplicate_groups(conn)
             for group in duplicate_groups["observations"]:
@@ -814,18 +955,36 @@ class PersonaSublimationPlugin(Star):
 
     def _template_is_sensitive(self, item: dict[str, Any]) -> bool:
         metadata = item.get("metadata") or {}
+        if metadata.get("sensitive") is True:
+            return True
         kind = str(metadata.get("kind") or "").lower()
+        role = str(metadata.get("role") or "").lower()
+        tags = metadata.get("tags") or []
+        tag_text = (
+            " ".join(str(tag).lower() for tag in tags)
+            if isinstance(tags, list)
+            else str(tags).lower()
+        )
         haystack = " ".join(
             [
                 str(item.get("template_id") or ""),
                 str(item.get("name") or ""),
                 str(item.get("description") or ""),
                 kind,
+                role,
+                tag_text,
             ]
         ).lower()
         return any(
             marker in haystack
-            for marker in ("ops", "operation", "nsfw", "secret", "sensitive", "rule")
+            for marker in (
+                "ops",
+                "operation",
+                "nsfw",
+                "intimate",
+                "secret",
+                "sensitive",
+            )
         )
 
     def _template_safe_summary(
@@ -1130,6 +1289,9 @@ class PersonaSublimationPlugin(Star):
         app.router.add_get("/api/sessions", self.api_list_sessions)
         app.router.add_get("/api/debug/data-summary", self.api_debug_data_summary)
         app.router.add_post("/api/debug/cleanup", self.api_debug_cleanup)
+        app.router.add_post(
+            "/api/debug/modules/normalize", self.api_debug_normalize_modules
+        )
         app.router.add_get("/api/personas", self.api_list_personas)
         app.router.add_get("/api/personas/{persona_id}", self.api_get_persona)
         app.router.add_get(
@@ -1331,6 +1493,17 @@ class PersonaSublimationPlugin(Star):
         dry_run = not self._explicit_true(data, "apply", "commit", "write")
         return web.json_response(
             {"ok": True, "result": self._cleanup_data_model(dry_run=dry_run)}
+        )
+
+    async def api_debug_normalize_modules(self, request: web.Request) -> web.Response:
+        """Maintenance-only module metadata normalization; never returns bodies."""
+        data = await self._read_json(request)
+        dry_run = not self._explicit_true(data, "apply", "commit", "write")
+        return web.json_response(
+            {
+                "ok": True,
+                "result": self._normalize_module_metadata_store(dry_run=dry_run),
+            }
         )
 
     def _now(self) -> tuple[float, str]:

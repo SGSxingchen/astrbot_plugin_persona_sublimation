@@ -21,7 +21,7 @@
 - **请求捕获**：`llm_request_captures` 只读排查，不进入人格编辑流。
 - **档案**：`persona_profiles` 是可选备注，不承担模块关联。
 
-详见 [`docs/unified_design.md`](docs/unified_design.md)。
+详见 [`docs/unified_design.md`](docs/unified_design.md) 与 [`docs/module_format.md`](docs/module_format.md)。
 
 ## 前端工作台
 
@@ -108,9 +108,10 @@
 
 - `GET /api/debug/data-summary`：安全摘要，仅返回计数、ID、长度和 hash 前缀。
 - `POST /api/debug/cleanup`：幂等整理数据模型，默认 dry-run；只有显式传 `{"apply": true}`、`{"commit": true}` 或 `{"write": true}` 才会写插件库。
+- `POST /api/debug/modules/normalize`：只整理模块 metadata，默认 dry-run；返回 body-free metadata diff，不返回模块正文，不进入普通前端主流程。
 - `POST /api/migrate-skill`：把旧 skill 文件导入为模块，人工确认后再关联到 persona。
 
-cleanup 只整理插件 SQLite：规范模块 metadata、移除完全重复观察/快照。它不会删除 patch 历史，也不会修改 AstrBot 原版 persona。
+cleanup 只整理插件 SQLite：规范模块 metadata、移除完全重复观察/快照。模块 normalize 只补齐/校正 `kind/module_id/role/source/content_sha256/sensitive/tags/recommended_order` 等 metadata，不返回正文。二者都不会删除 patch 历史，也不会修改 AstrBot 原版 persona。
 
 ## LLM Tools
 
@@ -146,7 +147,7 @@ LLM Tools 只允许查询、记录和起草，不允许审批、应用、删除�
 - `llm_request_captures`：请求捕获。
 - `persona_observations`：观察。
 - `persona_patches`：调整草案/审批/应用审计。
-- `persona_templates`：兼容表名，概念为模块。
+- `persona_templates`：兼容表名，概念为模块；格式规范见 `docs/module_format.md`。
 - `persona_module_links`：人格模块装配清单。
 - `persona_snapshots`：版本记录。
 - `persona_profiles`：可选档案备注。
