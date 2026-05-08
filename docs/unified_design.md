@@ -38,8 +38,8 @@
 
 职责：
 - 存储可复用 prompt 片段资产。
-- metadata 统一：`kind=module`，并包含 `role`、`source`、`module_id`、`content_sha256`。
-- 作为“由模块清单起草调整”的输入。
+- metadata 统一：`kind=module`，并包含 `role`、`source`、`module_id`、`content_sha256`、`sensitive`、`recommended_order` 等字段；详见 `docs/module_format.md`。
+- 作为“由模块清单起草调整”的输入。模块只是片段资产，不是 prompt 成品，不会直接应用到 persona。
 
 不该做：
 - 不再对用户显示旧称；前端和内部语义统一为“模块”。
@@ -174,7 +174,7 @@ Schema 约束：
 
 ## 迁移策略
 
-- 旧 skill 资产进入“导入模块”：写入兼容表 `persona_templates`，metadata 规范为 `kind=module`，人工确认后再通过 `persona_module_links` 关联到 persona。
+- 旧 skill 资产进入“导入模块”：写入兼容表 `persona_templates`，metadata 规范为 `kind=module`，人工确认后再通过 `persona_module_links` 关联到 persona。旧文件若包含执行脚本、迁移历史或操作说明，先生成清洗计划并在临时库验证，不直接删除真实库正文。
 - 旧 `profile.template_id` 不再作为模块关联入口；模块关联统一迁到 `persona_module_links`。
-- cleanup/debug 只作为维护接口，默认 dry-run，不进入普通前端主流程。
+- cleanup/debug 只作为维护接口，默认 dry-run，不进入普通前端主流程。`/api/debug/modules/normalize` 只返回 metadata diff，不返回模块正文；显式 apply/commit/write 后才写插件库。
 - 请求捕获保留只读排查，不自动生成或应用调整。
