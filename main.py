@@ -31,7 +31,7 @@ PRUNE_MAX_SECONDS = 0.75
     PLUGIN_NAME,
     "SGSxingchen",
     "人格升华：捕获实际发往 LLM 的 ProviderRequest 快照（第一阶段只读 Hook）。",
-    "0.3.0",
+    "0.4.0",
     "",
 )
 class PersonaSublimationPlugin(Star):
@@ -104,7 +104,9 @@ class PersonaSublimationPlugin(Star):
                     {"ok": False, "error": "internal server error"}, status=500
                 )
         response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, OPTIONS"
+        response.headers["Access-Control-Allow-Methods"] = (
+            "GET, POST, PATCH, PUT, DELETE, OPTIONS"
+        )
         response.headers["Access-Control-Allow-Headers"] = "Content-Type"
         return response
 
@@ -644,22 +646,50 @@ class PersonaSublimationPlugin(Star):
         app.router.add_get("/api/personas/{persona_id}", self.api_get_persona)
         app.router.add_get("/api/observations", self.api_list_observations)
         app.router.add_post("/api/observations", self.api_create_observation)
+        app.router.add_get(
+            r"/api/observations/{observation_id:\d+}", self.api_get_observation
+        )
+        app.router.add_patch(
+            r"/api/observations/{observation_id:\d+}", self.api_update_observation
+        )
+        app.router.add_post(
+            r"/api/observations/{observation_id:\d+}", self.api_update_observation
+        )
+        app.router.add_delete(
+            r"/api/observations/{observation_id:\d+}", self.api_delete_observation
+        )
         app.router.add_get("/api/patches", self.api_list_patches)
         app.router.add_post("/api/patches", self.api_create_patch)
         app.router.add_get("/api/patches/{patch_id}", self.api_get_patch)
         app.router.add_post("/api/patches/{patch_id}", self.api_update_patch)
         app.router.add_patch("/api/patches/{patch_id}", self.api_update_patch)
+        app.router.add_delete("/api/patches/{patch_id}", self.api_delete_patch)
         app.router.add_post("/api/patches/{patch_id}/approve", self.api_approve_patch)
         app.router.add_post("/api/patches/{patch_id}/apply", self.api_apply_patch)
         app.router.add_post("/api/migrate-skill", self.api_migrate_skill_files)
         app.router.add_get("/api/templates", self.api_list_templates)
         app.router.add_post("/api/templates", self.api_create_template)
         app.router.add_get("/api/templates/{template_id}", self.api_get_template)
+        app.router.add_patch("/api/templates/{template_id}", self.api_update_template)
+        app.router.add_post("/api/templates/{template_id}", self.api_update_template)
+        app.router.add_delete("/api/templates/{template_id}", self.api_delete_template)
+        app.router.add_post(
+            "/api/templates/{template_id}/patch", self.api_create_patch_from_template
+        )
         app.router.add_get("/api/snapshots", self.api_list_snapshots)
         app.router.add_post("/api/snapshots", self.api_create_snapshot)
         app.router.add_get("/api/snapshots/{snapshot_id}", self.api_get_snapshot)
+        app.router.add_patch("/api/snapshots/{snapshot_id}", self.api_update_snapshot)
+        app.router.add_post("/api/snapshots/{snapshot_id}", self.api_update_snapshot)
+        app.router.add_delete("/api/snapshots/{snapshot_id}", self.api_delete_snapshot)
+        app.router.add_post(
+            "/api/snapshots/{snapshot_id}/patch", self.api_create_patch_from_snapshot
+        )
         app.router.add_get("/api/profiles", self.api_list_profiles)
+        app.router.add_get("/api/profiles/{persona_id}", self.api_get_profile)
         app.router.add_post("/api/profiles/{persona_id}", self.api_upsert_profile)
+        app.router.add_patch("/api/profiles/{persona_id}", self.api_upsert_profile)
+        app.router.add_delete("/api/profiles/{persona_id}", self.api_delete_profile)
         app.router.add_route("OPTIONS", "/{tail:.*}", self.api_options)
 
         runner = web.AppRunner(app)
@@ -860,6 +890,11 @@ class PersonaSublimationPlugin(Star):
             items.append(item)
         return web.json_response({"ok": True, "items": items})
 
+    def _observation_row_to_item(self, row: sqlite3.Row) -> dict[str, Any]:
+        item = dict(row)
+        item["metadata"] = self._loads(item.pop("metadata_json"), {})
+        return item
+
     async def api_create_observation(self, request: web.Request) -> web.Response:
         data = await self._read_json(request)
         persona_id = str(data.get("persona_id", "")).strip()
@@ -891,6 +926,101 @@ class PersonaSublimationPlugin(Star):
             conn.commit()
             new_id = cur.lastrowid
         return web.json_response({"ok": True, "id": new_id})
+
+    async def api_get_observation(self, request: web.Request) -> web.Response:
+        observation_id = int(request.match_info["observation_id"])
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM persona_observations WHERE id = ?",
+                (observation_id,),
+            ).fetchone()
+        if not row:
+            return web.json_response(
+                {"ok": False, "error": "观察记录不存在"}, status=404
+            )
+        return web.json_response(
+            {"ok": True, "item": self._observation_row_to_item(row)}
+        )
+
+    async def api_update_observation(self, request: web.Request) -> web.Response:
+        observation_id = int(request.match_info["observation_id"])
+        data = await self._read_json(request)
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM persona_observations WHERE id = ?",
+                (observation_id,),
+            ).fetchone()
+            if not row:
+                return web.json_response(
+                    {"ok": False, "error": "观察记录不存在"}, status=404
+                )
+            item = self._observation_row_to_item(row)
+            expected_persona_id = str(data.get("persona_id", "")).strip()
+            if expected_persona_id and expected_persona_id != item["persona_id"]:
+                return web.json_response(
+                    {"ok": False, "error": "persona_id 与观察记录不匹配"},
+                    status=409,
+                )
+            metadata = (
+                item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+            )
+            incoming_metadata = data.get("metadata")
+            if isinstance(incoming_metadata, dict):
+                metadata.update(incoming_metadata)
+            conn.execute(
+                """
+                UPDATE persona_observations
+                SET source = ?, content = ?, interpretation = ?, emotion = ?,
+                    capture_id = ?, metadata_json = ?
+                WHERE id = ?
+                """,
+                (
+                    str(data.get("source", item.get("source") or "") or ""),
+                    str(data.get("content", item.get("content") or "") or ""),
+                    str(
+                        data.get("interpretation", item.get("interpretation") or "")
+                        or ""
+                    ),
+                    str(data.get("emotion", item.get("emotion") or "") or ""),
+                    data.get("capture_id", item.get("capture_id")),
+                    self._json(metadata),
+                    observation_id,
+                ),
+            )
+            conn.commit()
+            updated = conn.execute(
+                "SELECT * FROM persona_observations WHERE id = ?",
+                (observation_id,),
+            ).fetchone()
+        return web.json_response(
+            {"ok": True, "item": self._observation_row_to_item(updated)}
+        )
+
+    async def api_delete_observation(self, request: web.Request) -> web.Response:
+        observation_id = int(request.match_info["observation_id"])
+        persona_id = request.query.get("persona_id", "").strip()
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT persona_id FROM persona_observations WHERE id = ?",
+                (observation_id,),
+            ).fetchone()
+            if not row:
+                return web.json_response(
+                    {"ok": False, "error": "观察记录不存在"}, status=404
+                )
+            if persona_id and persona_id != row["persona_id"]:
+                return web.json_response(
+                    {"ok": False, "error": "persona_id 与观察记录不匹配"},
+                    status=409,
+                )
+            conn.execute(
+                "DELETE FROM persona_observations WHERE id = ?",
+                (observation_id,),
+            )
+            conn.commit()
+        return web.json_response(
+            {"ok": True, "deleted_id": observation_id, "persona_id": row["persona_id"]}
+        )
 
     async def api_list_patches(self, request: web.Request) -> web.Response:
         persona_id = request.query.get("persona_id", "").strip()
@@ -971,6 +1101,63 @@ class PersonaSublimationPlugin(Star):
             conn.commit()
         return web.json_response({"ok": True, "patch_id": patch_id, "diff": diff})
 
+    async def _create_patch_record_from_data(
+        self, data: dict[str, Any]
+    ) -> dict[str, Any]:
+        persona_id = str(data.get("persona_id", "")).strip()
+        proposed_prompt = data.get("proposed_prompt")
+        if not persona_id:
+            raise web.HTTPBadRequest(reason="persona_id 必填")
+        try:
+            persona = await self.context.persona_manager.get_persona(persona_id)
+        except Exception as exc:
+            raise web.HTTPNotFound(reason=str(exc)) from exc
+        base_prompt = data.get("base_prompt")
+        if base_prompt is None:
+            base_prompt = persona.system_prompt or ""
+        if proposed_prompt is None:
+            proposed_prompt = base_prompt
+        patch_id = str(data.get("patch_id") or self._next_patch_id(persona_id))
+        diff = self._make_prompt_diff(
+            persona_id, str(base_prompt), str(proposed_prompt)
+        )
+        metadata = data.get("metadata", {}) or {}
+        if not isinstance(metadata, dict):
+            metadata = {"raw_metadata": metadata}
+        notes = str(data.get("notes", "") or "").strip()
+        if notes:
+            metadata["notes"] = notes
+        mode = (
+            "prompt" if data.get("proposed_prompt") is not None else "structured-draft"
+        )
+        metadata.setdefault("mode", mode)
+        ts, iso = self._now()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO persona_patches
+                (patch_id, timestamp, timestamp_iso, persona_id, status, trigger, changes_json,
+                 core_preserved_json, proposed_prompt, base_prompt, diff, approved_by, metadata_json)
+                VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    patch_id,
+                    ts,
+                    iso,
+                    persona_id,
+                    str(data.get("trigger", "") or ""),
+                    self._json(data.get("changes", []) or []),
+                    self._json(data.get("core_preserved", []) or []),
+                    str(proposed_prompt),
+                    str(base_prompt),
+                    diff,
+                    data.get("approved_by"),
+                    self._json(metadata),
+                ),
+            )
+            conn.commit()
+        return {"patch_id": patch_id, "diff": diff}
+
     async def api_get_patch(self, request: web.Request) -> web.Response:
         patch_id = request.match_info.get("patch_id", "").strip()
         with self._lock, self._connect() as conn:
@@ -1048,6 +1235,31 @@ class PersonaSublimationPlugin(Star):
             ).fetchone()
         return web.json_response(
             {"ok": True, "item": self._patch_row_to_item(updated), "diff": diff}
+        )
+
+    async def api_delete_patch(self, request: web.Request) -> web.Response:
+        patch_id = request.match_info.get("patch_id", "").strip()
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT patch_id, persona_id, status FROM persona_patches WHERE patch_id = ?",
+                (patch_id,),
+            ).fetchone()
+            if not row:
+                return web.json_response(
+                    {"ok": False, "error": "补丁不存在"}, status=404
+                )
+            if row["status"] != "pending":
+                return web.json_response(
+                    {
+                        "ok": False,
+                        "error": "只允许删除 pending 补丁；已审批/已应用补丁不会被删除",
+                    },
+                    status=400,
+                )
+            conn.execute("DELETE FROM persona_patches WHERE patch_id = ?", (patch_id,))
+            conn.commit()
+        return web.json_response(
+            {"ok": True, "deleted_patch_id": patch_id, "persona_id": row["persona_id"]}
         )
 
     def _next_patch_id(self, persona_id: str) -> str:
@@ -1387,6 +1599,125 @@ class PersonaSublimationPlugin(Star):
             conn.commit()
         return web.json_response({"ok": True, "snapshot_id": snapshot_id})
 
+    async def api_update_snapshot(self, request: web.Request) -> web.Response:
+        snapshot_id = request.match_info.get("snapshot_id", "").strip()
+        data = await self._read_json(request)
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM persona_snapshots WHERE snapshot_id = ?",
+                (snapshot_id,),
+            ).fetchone()
+            if not row:
+                return web.json_response(
+                    {"ok": False, "error": "快照不存在"}, status=404
+                )
+            item = self._snapshot_row_to_item(row, include_content=True)
+            expected_persona_id = str(data.get("persona_id", "")).strip()
+            if expected_persona_id and expected_persona_id != item["persona_id"]:
+                return web.json_response(
+                    {"ok": False, "error": "persona_id 与快照不匹配"}, status=409
+                )
+            metadata = (
+                item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+            )
+            incoming_metadata = data.get("metadata")
+            if isinstance(incoming_metadata, dict):
+                metadata.update(incoming_metadata)
+            conn.execute(
+                """
+                UPDATE persona_snapshots
+                SET label = ?, metadata_json = ?
+                WHERE snapshot_id = ?
+                """,
+                (
+                    str(data.get("label", item.get("label") or "") or ""),
+                    self._json(metadata),
+                    snapshot_id,
+                ),
+            )
+            conn.commit()
+            updated = conn.execute(
+                "SELECT * FROM persona_snapshots WHERE snapshot_id = ?",
+                (snapshot_id,),
+            ).fetchone()
+        return web.json_response(
+            {"ok": True, "item": self._snapshot_row_to_item(updated, True)}
+        )
+
+    async def api_delete_snapshot(self, request: web.Request) -> web.Response:
+        snapshot_id = request.match_info.get("snapshot_id", "").strip()
+        persona_id = request.query.get("persona_id", "").strip()
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT persona_id FROM persona_snapshots WHERE snapshot_id = ?",
+                (snapshot_id,),
+            ).fetchone()
+            if not row:
+                return web.json_response(
+                    {"ok": False, "error": "快照不存在"}, status=404
+                )
+            if persona_id and persona_id != row["persona_id"]:
+                return web.json_response(
+                    {"ok": False, "error": "persona_id 与快照不匹配"}, status=409
+                )
+            conn.execute(
+                "DELETE FROM persona_snapshots WHERE snapshot_id = ?",
+                (snapshot_id,),
+            )
+            conn.commit()
+        return web.json_response(
+            {
+                "ok": True,
+                "deleted_snapshot_id": snapshot_id,
+                "persona_id": row["persona_id"],
+            }
+        )
+
+    async def api_create_patch_from_snapshot(
+        self, request: web.Request
+    ) -> web.Response:
+        snapshot_id = request.match_info.get("snapshot_id", "").strip()
+        data = await self._read_json(request)
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM persona_snapshots WHERE snapshot_id = ?",
+                (snapshot_id,),
+            ).fetchone()
+        if not row:
+            return web.json_response({"ok": False, "error": "快照不存在"}, status=404)
+        snapshot = self._snapshot_row_to_item(row, include_content=True)
+        persona_id = str(data.get("persona_id") or snapshot["persona_id"]).strip()
+        result = await self._create_patch_record_from_data(
+            {
+                "persona_id": persona_id,
+                "proposed_prompt": snapshot.get("content") or "",
+                "trigger": data.get(
+                    "trigger",
+                    f"从快照生成补丁草案：{snapshot.get('label') or snapshot_id}",
+                ),
+                "changes": data.get(
+                    "changes",
+                    [
+                        {
+                            "aspect": "snapshot",
+                            "after": snapshot_id,
+                            "reason": "人工从快照生成补丁草案",
+                        }
+                    ],
+                ),
+                "metadata": {
+                    "source": "snapshot",
+                    "snapshot_id": snapshot_id,
+                    **(
+                        data.get("metadata", {})
+                        if isinstance(data.get("metadata"), dict)
+                        else {}
+                    ),
+                },
+            }
+        )
+        return web.json_response({"ok": True, **result})
+
     async def api_list_templates(self, _request: web.Request) -> web.Response:
         with self._lock, self._connect() as conn:
             rows = conn.execute(
@@ -1449,6 +1780,130 @@ class PersonaSublimationPlugin(Star):
             conn.commit()
         return web.json_response({"ok": True, "template_id": template_id})
 
+    async def api_update_template(self, request: web.Request) -> web.Response:
+        template_id = request.match_info.get("template_id", "").strip()
+        data = await self._read_json(request)
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM persona_templates WHERE template_id = ?",
+                (template_id,),
+            ).fetchone()
+            if not row:
+                return web.json_response(
+                    {"ok": False, "error": "模板/模块不存在"}, status=404
+                )
+            item = dict(row)
+            item["variables"] = self._loads(item.pop("variables_json"), [])
+            item["metadata"] = self._loads(item.pop("metadata_json"), {})
+            metadata = (
+                item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+            )
+            incoming_metadata = data.get("metadata")
+            if isinstance(incoming_metadata, dict):
+                metadata.update(incoming_metadata)
+            variables = data.get("variables", item.get("variables") or [])
+            _, iso = self._now()
+            conn.execute(
+                """
+                UPDATE persona_templates
+                SET timestamp_iso = ?, name = ?, description = ?, content = ?,
+                    variables_json = ?, metadata_json = ?
+                WHERE template_id = ?
+                """,
+                (
+                    iso,
+                    str(data.get("name", item.get("name") or "") or ""),
+                    str(data.get("description", item.get("description") or "") or ""),
+                    str(data.get("content", item.get("content") or "") or ""),
+                    self._json(variables or []),
+                    self._json(metadata),
+                    template_id,
+                ),
+            )
+            conn.commit()
+            updated = conn.execute(
+                "SELECT * FROM persona_templates WHERE template_id = ?",
+                (template_id,),
+            ).fetchone()
+        item = dict(updated)
+        for key in ("variables_json", "metadata_json"):
+            item[key.removesuffix("_json")] = self._loads(item.pop(key), None)
+        return web.json_response({"ok": True, "item": item})
+
+    async def api_delete_template(self, request: web.Request) -> web.Response:
+        template_id = request.match_info.get("template_id", "").strip()
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT template_id FROM persona_templates WHERE template_id = ?",
+                (template_id,),
+            ).fetchone()
+            if not row:
+                return web.json_response(
+                    {"ok": False, "error": "模板/模块不存在"}, status=404
+                )
+            conn.execute(
+                "DELETE FROM persona_templates WHERE template_id = ?",
+                (template_id,),
+            )
+            conn.commit()
+        return web.json_response({"ok": True, "deleted_template_id": template_id})
+
+    async def api_create_patch_from_template(
+        self, request: web.Request
+    ) -> web.Response:
+        template_id = request.match_info.get("template_id", "").strip()
+        data = await self._read_json(request)
+        persona_id = str(data.get("persona_id", "")).strip()
+        if not persona_id:
+            return web.json_response(
+                {"ok": False, "error": "persona_id 必填"}, status=400
+            )
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM persona_templates WHERE template_id = ?",
+                (template_id,),
+            ).fetchone()
+        if not row:
+            return web.json_response(
+                {"ok": False, "error": "模板/模块不存在"}, status=404
+            )
+        template = dict(row)
+        template["metadata"] = self._loads(template.pop("metadata_json"), {})
+        template["variables"] = self._loads(template.pop("variables_json"), [])
+        proposed_prompt = str(
+            data.get("proposed_prompt") or template.get("content") or ""
+        )
+        result = await self._create_patch_record_from_data(
+            {
+                "persona_id": persona_id,
+                "proposed_prompt": proposed_prompt,
+                "trigger": data.get(
+                    "trigger",
+                    f"从模板/模块生成补丁草案：{template.get('name') or template_id}",
+                ),
+                "changes": data.get(
+                    "changes",
+                    [
+                        {
+                            "aspect": "template",
+                            "after": template_id,
+                            "reason": "人工从模板/模块生成补丁草案",
+                        }
+                    ],
+                ),
+                "metadata": {
+                    "source": "template",
+                    "template_id": template_id,
+                    **(
+                        data.get("metadata", {})
+                        if isinstance(data.get("metadata"), dict)
+                        else {}
+                    ),
+                },
+            }
+        )
+        return web.json_response({"ok": True, **result})
+
     def _next_template_id(self) -> str:
         ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         return f"tpl-{ts}"
@@ -1486,6 +1941,35 @@ class PersonaSublimationPlugin(Star):
             )
         return web.json_response({"ok": True, "items": items})
 
+    async def api_get_profile(self, request: web.Request) -> web.Response:
+        persona_id = request.match_info.get("persona_id", "").strip()
+        if not persona_id:
+            return web.json_response(
+                {"ok": False, "error": "persona_id 必填"}, status=400
+            )
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM persona_profiles WHERE persona_id = ?",
+                (persona_id,),
+            ).fetchone()
+        if not row:
+            return web.json_response(
+                {
+                    "ok": True,
+                    "item": {
+                        "persona_id": persona_id,
+                        "display_name": "",
+                        "archetype": "",
+                        "notes": "",
+                        "template_id": None,
+                        "metadata": {},
+                    },
+                }
+            )
+        item = dict(row)
+        item["metadata"] = self._loads(item.pop("metadata_json"), {})
+        return web.json_response({"ok": True, "item": item})
+
     async def api_upsert_profile(self, request: web.Request) -> web.Response:
         persona_id = request.match_info.get("persona_id", "").strip()
         data = await self._read_json(request)
@@ -1517,6 +2001,20 @@ class PersonaSublimationPlugin(Star):
                     iso,
                     self._json(data.get("metadata", {}) or {}),
                 ),
+            )
+            conn.commit()
+        return web.json_response({"ok": True, "persona_id": persona_id})
+
+    async def api_delete_profile(self, request: web.Request) -> web.Response:
+        persona_id = request.match_info.get("persona_id", "").strip()
+        if not persona_id:
+            return web.json_response(
+                {"ok": False, "error": "persona_id 必填"}, status=400
+            )
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                "DELETE FROM persona_profiles WHERE persona_id = ?",
+                (persona_id,),
             )
             conn.commit()
         return web.json_response({"ok": True, "persona_id": persona_id})

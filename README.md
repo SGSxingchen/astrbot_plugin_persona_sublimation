@@ -8,7 +8,7 @@
 
 - 捕获 AstrBot 发往 LLM 的 `ProviderRequest` 快照
 - 独立 Web 页面查看 prompts、system prompts、contexts、tools、媒体 URL 等信息
-- 单文件前端操作台：选择 persona、记录 observation、编辑 patch 草案、查看 diff、approve/apply、创建快照、查看模板模块
+- 中文 Web 管理台：按 persona 隔离管理 observation、patch、snapshot、template/module、profile，支持基础 CRUD 和人工应用流
 - 支持按 `session_id` 查看历史请求
 - 支持多 persona 的观察记录、补丁、profile 计数与隔离
 - 支持通用人格模板和模块资产
@@ -33,13 +33,14 @@ http://127.0.0.1:7833/
 `GET /` 提供纯静态 HTML/JS/CSS 的人类操作台，无构建链。页面包含：
 
 - Persona 选择与状态卡片：按 `persona_id` 切换上下文，显示 observation/patch 计数和 prompt 长度
-- Observations：查看当前 persona 的观察记录，手动新增 observation
-- Patches：创建结构化草案或直接编辑 `proposed_prompt`，展示 diff，人工 approve，二次确认后 apply；也支持人类显式点击 “Approve & Apply” 直接审批并应用
-- Snapshots：列出当前 persona 的快照/基线，一键从当前 AstrBot persona 创建 snapshot
-- Templates / Modules：查看已迁移的模板/模块列表；敏感内容不会默认展开，需要点击并确认
-- Captures：保留 LLM 请求捕获列表和详情
+- Observations：当前 persona 的观察记录列表，支持新增 / 查看 / 编辑 / 删除 / 保存
+- Patches：创建结构化草案或直接编辑 `proposed_prompt`，支持查看 diff、编辑 pending、删除 pending、审批、二次确认后应用；也支持人类显式点击“直接审批并应用”
+- Snapshots：列出当前 persona 的快照/基线，支持创建当前人格快照、查看、编辑标签/说明、删除，并可从快照生成 pending 补丁草案
+- Templates / Modules：支持新增 / 查看 / 编辑 / 删除 / 保存模板与模块；敏感内容不会默认展开，需要点击并确认；可从模板生成 pending 补丁草案
+- Profiles：维护当前 persona 的显示名、原型、备注和模板关联，支持保存与清空
+- Captures：保留 LLM 请求捕获列表和详情查看
 
-切换 persona 后，observations、patches、snapshots 会按 `persona_id` 重新加载。页面不会自动应用任何补丁。
+切换 persona 后，observations、patches、snapshots、profile 会按 `persona_id` 重新加载。页面不会自动应用任何补丁。快照和模板不会直接写入 AstrBot persona；它们只能先生成 pending patch，再由人类审批/应用。
 
 ## 安全警告
 
@@ -73,6 +74,9 @@ bind_host = 127.0.0.1
 
 - `GET /api/observations?persona_id=&limit=`：观察记录列表
 - `POST /api/observations`：创建观察记录
+- `GET /api/observations/<id>`：查看单条观察记录
+- `PATCH/POST /api/observations/<id>`：更新单条观察记录；可带 `persona_id` 做匹配校验
+- `DELETE /api/observations/<id>?persona_id=`：删除单条观察记录；可带 `persona_id` 做匹配校验
 
 示例：
 
@@ -92,6 +96,7 @@ bind_host = 127.0.0.1
 - `POST /api/patches`：创建补丁，默认 `pending`
 - `GET /api/patches/<patch_id>`：查看单个补丁和 diff
 - `PATCH /api/patches/<patch_id>` 或 `POST /api/patches/<patch_id>`：更新 pending 补丁草案，可改 trigger、changes、base_prompt、proposed_prompt
+- `DELETE /api/patches/<patch_id>`：删除 pending 补丁。非 pending（已审批/已应用）不会被删除
 - `POST /api/patches/<patch_id>/approve`：审批补丁
 - `POST /api/patches/<patch_id>/apply`：应用补丁
 
@@ -131,6 +136,9 @@ bind_host = 127.0.0.1
 - `GET /api/templates`：模板/模块资产列表
 - `GET /api/templates/<template_id>`：查看单个模板/模块正文
 - `POST /api/templates`：创建或更新模板/模块
+- `PATCH/POST /api/templates/<template_id>`：更新模板/模块说明、正文、变量和 metadata；从 skill-migration 迁来的模块也允许更新
+- `DELETE /api/templates/<template_id>`：删除模板/模块
+- `POST /api/templates/<template_id>/patch`：从模板/模块正文生成 pending 补丁草案，不直接应用到 persona
 
 可用于保存通用人格模板、模块片段、NSFW 模块、RolePlay 模块、运维备注模块等。
 
@@ -139,13 +147,19 @@ bind_host = 127.0.0.1
 - `GET /api/snapshots?persona_id=&limit=`：快照列表
 - `GET /api/snapshots/<snapshot_id>`：查看单个快照正文
 - `POST /api/snapshots`：创建快照
+- `PATCH/POST /api/snapshots/<snapshot_id>`：更新快照标签和 metadata，不改原版 persona
+- `DELETE /api/snapshots/<snapshot_id>?persona_id=`：删除插件快照，不影响原版 persona
+- `POST /api/snapshots/<snapshot_id>/patch`：从快照正文生成 pending 补丁草案，不直接应用到 persona
 
 `POST /api/snapshots` 不传 `content` 时，会从当前 AstrBot persona 读取 `system_prompt` 创建快照，不会修改 persona。
 
 ### Profiles
 
 - `GET /api/profiles`：列出 persona profile，并附 observation/patch 计数
+- `GET /api/profiles/<persona_id>`：查看某 persona 的 profile；不存在时返回空 profile
 - `POST /api/profiles/<persona_id>`：更新某个人格的 display_name、archetype、notes、template 关联
+- `PATCH /api/profiles/<persona_id>`：同上，更新 profile
+- `DELETE /api/profiles/<persona_id>`：清空插件内 profile，不删除原版 persona
 
 ### 旧 SKILL 迁移
 
