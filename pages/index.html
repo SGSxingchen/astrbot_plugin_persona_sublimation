@@ -3,174 +3,243 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>人格升华工作台</title>
+  <title>人格升华统一工作台</title>
   <style>
-    :root{--bg:#f7efe1;--panel:#fffaf0;--ink:#2b2118;--muted:#7b6a59;--line:#dcc7a3;--accent:#9b5c25;--ok:#26804a;--danger:#b42318;--blue:#315f9f;--shadow:0 10px 26px #5b3b161a}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top left,#ffe0b2,#f7efe1 36%,#ead7b4);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}header{position:sticky;top:0;z-index:20;background:#21170f;color:#ffe9bf;border-bottom:4px solid var(--accent);box-shadow:0 8px 28px #0004}.top{display:flex;gap:18px;align-items:center;justify-content:space-between;padding:14px 20px}.brand{font-size:22px;font-weight:900;letter-spacing:.04em}.warn{font-size:12px;color:#ffcf8a}.wrap{padding:18px;display:grid;grid-template-columns:330px 1fr;gap:16px}.card{background:var(--panel);border:2px solid var(--line);border-radius:18px;box-shadow:var(--shadow);overflow:hidden}.card h2,.card h3{margin:0;padding:12px 14px;background:#2a2118;color:#ffe9bf;font-size:15px;letter-spacing:.03em}.body{padding:14px}.stack{display:grid;gap:10px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.tab{border:2px solid #2a2118;background:#fff7e8;color:#2a2118;border-radius:999px;padding:9px 13px;font-weight:800;cursor:pointer}.tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}input,select,textarea,button{font:inherit;border:2px solid #2a211833;border-radius:12px;padding:9px 10px;background:#fffdf8;color:var(--ink)}textarea{width:100%;min-height:92px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px}select,input{width:100%}button{cursor:pointer;font-weight:900;background:#2a2118;color:#fff;border-color:#2a2118}button.secondary{background:#fff7e8;color:#2a2118}button.good{background:var(--ok);border-color:var(--ok)}button.danger{background:var(--danger);border-color:var(--danger)}button.blue{background:var(--blue);border-color:var(--blue)}button:disabled{opacity:.45;cursor:not-allowed}.mini{font-size:12px;color:var(--muted)}.pill{display:inline-block;border-radius:999px;background:#ead7b4;padding:3px 8px;font-size:12px;font-weight:800;margin:2px}.status-pending{background:#ffdf90}.status-approved{background:#b8e5c9}.status-applied{background:#c8d8f2}.status-deleted{background:#ddd}.list{display:grid;gap:8px;max-height:52vh;overflow:auto;padding-right:4px}.item{background:#fffdf8;border:2px solid #2a211820;border-radius:14px;padding:10px;cursor:pointer}.item:hover,.item.active{border-color:var(--accent);box-shadow:0 4px 12px #5b3b1620}.item-title{font-weight:900}.item-meta{font-size:12px;color:var(--muted);margin:4px 0}.mutedbox{background:#fff7e8;border:1px dashed var(--line);border-radius:12px;padding:10px}.kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.kpi>div{background:#fff7e8;border-radius:12px;padding:10px;text-align:center}.section{display:none}.section.active{display:block}.split{display:grid;grid-template-columns:430px 1fr;gap:14px}.diff,pre{background:#201810;color:#fff3d6;border-radius:12px;padding:12px;overflow:auto;white-space:pre-wrap;word-break:break-word;max-height:52vh}.capture-layout{display:grid;grid-template-columns:390px 1fr;gap:12px}.toast{position:fixed;right:18px;bottom:18px;background:#21170f;color:#ffe9bf;padding:12px 14px;border-radius:14px;box-shadow:var(--shadow);z-index:50;max-width:460px}.hidden{display:none}.dangerText{color:var(--danger);font-weight:800}.field{display:grid;gap:4px}.field span{font-size:12px;color:var(--muted);font-weight:700}@media(max-width:1100px){.wrap,.split,.grid2,.capture-layout{grid-template-columns:1fr}.top{align-items:flex-start;flex-direction:column}}
+    :root{
+      --bg:#15110c;--paper:#fff8e8;--paper2:#f1e2c3;--ink:#24180f;--muted:#77634e;
+      --line:#d7bd8d;--brand:#a46021;--brand2:#e6a340;--green:#28784b;--red:#a12b21;--blue:#295b91;
+      --shadow:0 18px 42px rgba(39,22,8,.20);--radius:22px;
+    }
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;min-height:100vh;color:var(--ink);font-family:Georgia,"Noto Serif SC","Songti SC",serif;background:radial-gradient(circle at 8% 0%,#f4c26c 0 18%,transparent 34%),linear-gradient(135deg,#26170e,#805222 44%,#ead4a5)}
+    body::before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.18;background-image:linear-gradient(90deg,#fff 1px,transparent 1px),linear-gradient(#fff 1px,transparent 1px);background-size:38px 38px;mix-blend-mode:soft-light}
+    header{position:sticky;top:0;z-index:20;background:rgba(28,18,11,.92);backdrop-filter:blur(14px);border-bottom:3px solid var(--brand2);color:#ffe9bd}
+    .top{display:flex;justify-content:space-between;gap:18px;align-items:center;padding:18px 24px}.brand{font-size:24px;font-weight:900;letter-spacing:.08em}.subtitle{font-size:13px;color:#ffd58a;margin-top:4px}.shell{display:grid;grid-template-columns:340px 1fr;gap:18px;padding:18px}.panel{background:linear-gradient(180deg,var(--paper),#fffaf0);border:2px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}.panel h2,.panel h3{margin:0;padding:13px 16px;background:#2a1b10;color:#ffe9bd;font-size:16px;letter-spacing:.06em}.body{padding:16px}.stack{display:grid;gap:12px}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.flow{padding:10px 12px;border:1px dashed var(--line);border-radius:16px;background:#fff2d2;color:#50361f;font-weight:800;font-size:13px}.tabs{display:grid;grid-template-columns:repeat(6,minmax(96px,1fr));gap:8px;margin-bottom:14px}.tab{border:2px solid #2a1b10;border-radius:999px;padding:10px 12px;background:#fff3d6;color:#2a1b10;font-weight:900;cursor:pointer}.tab.active{background:var(--brand);border-color:var(--brand);color:#fff}input,select,textarea,button{font:inherit;border:2px solid #2a1b1026;border-radius:14px;padding:10px 12px;background:#fffdf7;color:var(--ink)}select,input{width:100%}textarea{width:100%;min-height:106px;resize:vertical;font-family:"SFMono-Regular",Consolas,monospace;font-size:13px}button{width:auto;cursor:pointer;background:#2a1b10;color:#fff;border-color:#2a1b10;font-weight:900}button.secondary{background:#fff4d8;color:#2a1b10}button.good{background:var(--green);border-color:var(--green)}button.danger{background:var(--red);border-color:var(--red)}button.blue{background:var(--blue);border-color:var(--blue)}button.ghost{background:transparent;color:#2a1b10}.field{display:grid;gap:5px}.field span{font-size:12px;color:var(--muted);font-weight:900}.mini{font-size:12px;color:var(--muted)}.kpi>div,.note{background:#fff2d2;border-radius:16px;padding:11px;text-align:center}.note{text-align:left}.section{display:none}.section.active{display:block}.split{display:grid;grid-template-columns:minmax(360px,460px) 1fr;gap:14px}.list{display:grid;gap:9px;max-height:56vh;overflow:auto;padding-right:4px}.item{border:2px solid #2a1b1018;border-radius:16px;background:#fffdf7;padding:11px;cursor:pointer}.item:hover{border-color:var(--brand);box-shadow:0 8px 20px rgba(82,48,15,.12)}.item-title{font-weight:900}.item-meta{margin:4px 0;color:var(--muted);font-size:12px}.pill{display:inline-flex;align-items:center;border-radius:999px;background:#ead2a1;padding:3px 8px;font-size:12px;font-weight:900}.status-pending{background:#ffdf8c}.status-approved{background:#bfe3c4}.status-applied{background:#c8d8ef}.status-deleted{background:#ddd}.diff,pre{margin:0;background:#1e150e;color:#fff0cf;border-radius:16px;padding:13px;white-space:pre-wrap;word-break:break-word;overflow:auto;max-height:56vh}.warn{border-left:5px solid var(--red);padding:10px 12px;background:#fff1ee;border-radius:14px;color:#612019;font-weight:900}.successline{border-left:5px solid var(--green);padding:10px 12px;background:#ecf7ee;border-radius:14px}.details{border:1px dashed var(--line);border-radius:14px;padding:9px;background:#fff9ec}.details summary{cursor:pointer;font-weight:900;color:#6d4c2c}.toast{position:fixed;right:18px;bottom:18px;z-index:50;max-width:460px;background:#1e150e;color:#ffe9bd;border:2px solid var(--brand2);border-radius:16px;padding:12px 14px;box-shadow:var(--shadow)}.hidden{display:none}.capture-layout{display:grid;grid-template-columns:400px 1fr;gap:14px}@media(max-width:1120px){.shell,.split,.capture-layout,.grid2{grid-template-columns:1fr}.tabs{grid-template-columns:repeat(2,1fr)}.top{align-items:flex-start;flex-direction:column}}
   </style>
 </head>
 <body>
-<header><div class="top"><div><div class="brand">人格升华工作台</div><div class="warn">无内置鉴权：只在可信网络使用。所有变更必须由人类点击确认；快照/模块不会直接应用到人格。</div></div><div class="row"><button class="secondary" onclick="reloadAll()">全部刷新</button></div></div></header>
-<div class="wrap">
-  <aside class="card">
-    <h2>当前人格</h2>
+<header>
+  <div class="top">
+    <div>
+      <div class="brand">人格升华统一工作台</div>
+      <div class="subtitle">唯一核心路径：选人格 → 配模块 → 生成调整草案 → 看差异 → 审批/应用到人格</div>
+    </div>
+    <button class="secondary" onclick="reloadAll()">刷新工作台</button>
+  </div>
+</header>
+
+<div class="shell">
+  <aside class="panel">
+    <h2>当前选择</h2>
     <div class="body stack">
-      <label class="field"><span>当前 persona_id</span><select id="personaSelect"></select></label>
-      <div id="personaCard" class="mutedbox mini">加载中...</div>
-      <div class="kpi"><div><b id="kObs">0</b><br><span class="mini">观察</span></div><div><b id="kPatch">0</b><br><span class="mini">调整</span></div><div><b id="kLen">0</b><br><span class="mini">提示词字数</span></div></div>
+      <label class="field"><span>persona_id</span><select id="personaSelect"></select></label>
+      <div id="personaCard" class="note mini">加载中...</div>
+      <div class="grid3 kpi">
+        <div><b id="kObs">0</b><br><span class="mini">观察</span></div>
+        <div><b id="kPatch">0</b><br><span class="mini">草案</span></div>
+        <div><b id="kLen">0</b><br><span class="mini">prompt 字数</span></div>
+      </div>
+      <div class="flow">快照、观察、模块清单都不能直接写入；只有调整草案能应用。</div>
       <button onclick="createCurrentSnapshot()">留存当前版本</button>
-      <button class="secondary" onclick="loadPersonaDetail()">查看/刷新人格提示词</button>
-      <pre id="personaPrompt" style="max-height:26vh">当前人格提示词会显示在这里</pre>
+      <button class="secondary" onclick="switchTab('modules')">去配置模块</button>
+      <button class="blue" onclick="switchTab('patches')">去看调整草案</button>
     </div>
   </aside>
-  <main class="card">
+
+  <main class="panel">
     <div class="body">
-      <nav class="tabs">
-        <button class="tab active" data-tab="observations" onclick="switchTab('observations')">观察</button>
-        <button class="tab" data-tab="patches" onclick="switchTab('patches')">调整</button>
-        <button class="tab" data-tab="snapshots" onclick="switchTab('snapshots')">版本</button>
-        <button class="tab" data-tab="templates" onclick="switchTab('templates')">模块</button>
-        <button class="tab" data-tab="profiles" onclick="switchTab('profiles')">档案</button>
-        <button class="tab" data-tab="captures" onclick="switchTab('captures')">请求记录</button>
+      <nav class="tabs" aria-label="工作台页面">
+        <button class="tab active" data-tab="persona" onclick="switchTab('persona')">人格</button>
+        <button class="tab" data-tab="modules" onclick="switchTab('modules')">模块装配</button>
+        <button class="tab" data-tab="patches" onclick="switchTab('patches')">调整草案</button>
+        <button class="tab" data-tab="snapshots" onclick="switchTab('snapshots')">版本记录</button>
+        <button class="tab" data-tab="observations" onclick="switchTab('observations')">观察</button>
+        <button class="tab" data-tab="captures" onclick="switchTab('captures')">请求捕获</button>
       </nav>
 
-      <section id="tab-observations" class="section active"><div class="split">
-        <div class="stack"><h3>观察记录</h3>
-          <label class="field"><span>记录 ID（留空表示记录一条）</span><input id="obsId" readonly placeholder="点击列表后自动填入" /></label>
-          <label class="field"><span>来源</span><input id="obsSource" placeholder="主人反馈 / 会话 / 捕获记录" /></label>
-          <label class="field"><span>内容（必填）</span><textarea id="obsContent" placeholder="观察内容"></textarea></label>
-          <label class="field"><span>理解 / 解读</span><textarea id="obsInterpretation" placeholder="你对这条观察的解读"></textarea></label>
-          <label class="field"><span>情绪标记</span><input id="obsEmotion" placeholder="认真 / 轻松 / 警惕..." /></label>
-          <div class="row"><button onclick="saveObservation()">保存记录</button><button class="secondary" onclick="resetObservationEditor()">记录一条</button><button class="danger" onclick="deleteObservation()">移除</button></div>
-        </div>
-        <div><h3>当前人格观察列表</h3><div id="observationsList" class="list"></div></div>
-      </div></section>
-
-      <section id="tab-patches" class="section"><div class="split">
-        <div class="stack"><h3>调整草案</h3>
-          <label class="field"><span>patch_id（留空表示起草调整）</span><input id="patchIdEditing" readonly placeholder="点击列表后自动填入" /></label>
-          <label class="field"><span>触发原因</span><input id="patchTrigger" placeholder="为什么需要修改人格提示词" /></label>
-          <label class="field"><span>调整项 JSON 或备注</span><textarea id="patchChanges" placeholder='例如 [{"aspect":"语气","after":"更短"}]'></textarea></label>
-          <label class="field"><span>base_prompt（安全检查基线）</span><textarea id="patchBase"></textarea></label>
-          <label class="field"><span>proposed_prompt（拟议写入内容）</span><textarea id="patchProposed"></textarea></label>
-          <div class="row"><button onclick="createOrUpdatePatch()">保存草案</button><button class="secondary" onclick="resetPatchEditor()">起草调整</button><button class="danger" onclick="deleteSelectedPatch()">放弃草案</button></div>
-        </div>
-        <div class="stack"><h3>调整列表与审核流程</h3><div id="patchesList" class="list"></div><h3>草案详情</h3><div id="patchDetail" class="mutedbox mini">选择一份草案查看详情。</div><div class="row"><button class="good" onclick="approveSelectedPatch()">审批</button><button class="danger" onclick="applySelectedPatch()">应用到人格</button><button class="danger" onclick="approveAndApplySelectedPatch()">直接审批并应用到人格</button></div><pre id="patchDiff" class="diff">这里会显示 diff</pre></div>
-      </div></section>
-
-      <section id="tab-snapshots" class="section"><div class="split">
-        <div class="stack"><h3>人格版本留存</h3>
-          <label class="field"><span>snapshot_id</span><input id="snapshotId" readonly placeholder="点击列表后自动填入" /></label>
-          <label class="field"><span>标签</span><input id="snapshotLabel" placeholder="快照标签" /></label>
-          <label class="field"><span>说明/metadata.notes</span><textarea id="snapshotNotes" placeholder="快照说明"></textarea></label>
-          <label class="field"><span>内容（只读；移除只影响插件快照）</span><textarea id="snapshotBody" readonly placeholder="快照正文"></textarea></label>
-          <div class="row"><button onclick="createCurrentSnapshot()">留存当前版本</button><button onclick="saveSnapshot()">改备注</button><button class="secondary" onclick="resetSnapshotEditor()">收起查看</button><button class="danger" onclick="deleteSnapshot()">移除</button><button class="blue" onclick="createPatchFromSnapshot()">由此起草调整</button></div>
-        </div>
-        <div><h3>当前人格版本列表（点击查看版本）</h3><div id="snapshotsList" class="list"></div></div>
-      </div></section>
-
-      <section id="tab-templates" class="section"><div class="split">
-        <div class="stack"><h3>模块库</h3>
-          <label class="field"><span>模块 ID（留空表示收纳新模块）</span><input id="templateId" placeholder="空则自动生成" /></label>
-          <label class="field"><span>名称</span><input id="templateName" placeholder="模块名称" /></label>
-          <label class="field"><span>说明</span><textarea id="templateDescription" placeholder="用途说明"></textarea></label>
-          <label class="field"><span>类型/metadata.kind</span><input id="templateKind" placeholder="module / nsfw_module / roleplay_module ..." /></label>
-          <label class="field"><span>内容（敏感内容需确认后才展开）</span><textarea id="templateContent" placeholder="模块正文"></textarea></label>
-          <div class="row"><button onclick="saveTemplate()">更新内容</button><button class="secondary" onclick="resetTemplateEditor()">收纳模块</button><button class="danger" onclick="deleteTemplate()">移除</button><button class="blue" onclick="createPatchFromTemplate()">由此起草调整</button></div>
-        </div>
-        <div class="stack">
-          <h3>当前人格模块清单</h3>
-          <div class="mutedbox mini">模块关联只记录装配关系，不会直接写入 AstrBot persona；需要“由模块清单起草调整”后再审批/应用。</div>
-          <div class="row">
-            <select id="moduleLinkTemplate"></select>
-            <input id="moduleLinkRole" placeholder="角色：meta/persona/system/nsfw/roleplay/ops/custom" />
-            <input id="moduleLinkOrder" type="number" placeholder="顺序" />
+      <section id="tab-persona" class="section active">
+        <div class="split">
+          <div class="stack">
+            <h3>人格</h3>
+            <div class="successline">这里读取原版 AstrBot persona。插件不复制 persona；最终写回只能来自已确认的调整草案。</div>
+            <button onclick="loadPersonaDetail()">刷新当前 prompt</button>
+            <button onclick="createCurrentSnapshot()">留存当前版本</button>
+            <h3>可选备注</h3>
+            <label class="field"><span>显示名</span><input id="profileDisplay" placeholder="仅供人类识别，可留空" /></label>
+            <label class="field"><span>原型/定位</span><input id="profileArchetype" placeholder="仅备注，不参与模块关联" /></label>
+            <label class="field"><span>备注</span><textarea id="profileNotes" placeholder="可记录维护说明；模块关联请到“模块装配”。"></textarea></label>
+            <div class="row"><button onclick="saveProfile()">保存备注</button><button class="secondary" onclick="loadProfile()">刷新备注</button></div>
           </div>
-          <textarea id="moduleLinkNotes" placeholder="关联备注"></textarea>
-          <div class="row"><button onclick="linkSelectedModule()">关联到当前人格</button><button class="blue" onclick="createPatchFromModuleLinks()">由模块清单起草调整</button></div>
-          <div id="personaModulesList" class="list"></div>
-          <h3>模块库（点击查看内容）</h3><div id="templatesList" class="list"></div>
+          <div class="stack">
+            <h3>当前 prompt</h3>
+            <div id="personaSummary" class="note mini">尚未加载</div>
+            <pre id="personaPrompt">当前人格 prompt 会显示在这里</pre>
+          </div>
         </div>
-      </div></section>
+      </section>
 
-      <section id="tab-profiles" class="section"><div class="split">
-        <div class="stack"><h3>当前人格档案</h3>
-          <label class="field"><span>显示名</span><input id="profileDisplay" placeholder="显示名" /></label>
-          <label class="field"><span>原型</span><input id="profileArchetype" placeholder="人格原型 / 定位" /></label>
-          <label class="field"><span>兼容关联字段</span><input id="profileTemplate" placeholder="可留空；新模块关联请使用模块清单" /></label>
-          <label class="field"><span>备注</span><textarea id="profileNotes" placeholder="人类维护备注"></textarea></label>
-          <div class="row"><button onclick="saveProfile()">保存资料</button><button class="danger" onclick="deleteProfile()">清空资料</button><button class="secondary" onclick="loadProfile()">查看/刷新</button></div>
+      <section id="tab-modules" class="section">
+        <div class="split">
+          <div class="stack">
+            <h3>模块库</h3>
+            <div class="note mini">模块是唯一的 prompt 片段资产。保存模块不会写入 persona。</div>
+            <label class="field"><span>模块 ID</span><input id="moduleId" placeholder="留空自动生成；点击列表后编辑" /></label>
+            <label class="field"><span>名称</span><input id="moduleName" placeholder="模块名称" /></label>
+            <div class="grid2">
+              <label class="field"><span>角色</span><select id="moduleRole"><option>custom</option><option>meta</option><option>persona</option><option>system</option><option>nsfw</option><option>roleplay</option><option>ops</option></select></label>
+              <label class="field"><span>来源</span><input id="moduleSource" placeholder="manual / skill-migration" /></label>
+            </div>
+            <label class="field"><span>说明</span><textarea id="moduleDescription" placeholder="用途、适用范围和注意事项"></textarea></label>
+            <label class="field"><span>模块内容</span><textarea id="moduleContent" placeholder="模块正文；展开已有模块前会二次确认"></textarea></label>
+            <div class="row"><button onclick="saveModule()">保存模块</button><button class="secondary" onclick="resetModuleEditor()">新建模块</button><button class="blue" onclick="createPatchFromModule()">由此起草调整</button></div>
+            <details class="details"><summary>低频维护</summary><div class="row" style="margin-top:8px"><button class="danger" onclick="deleteModule()">移除模块</button></div></details>
+          </div>
+          <div class="stack">
+            <h3>当前人格模块清单</h3>
+            <div class="warn">模块清单只负责装配。要写入 persona，必须点击“由模块清单起草调整”，再到“调整草案”审批/应用。</div>
+            <div class="grid2">
+              <label class="field"><span>选择模块</span><select id="moduleLinkModule"></select></label>
+              <label class="field"><span>清单角色</span><input id="moduleLinkRole" placeholder="meta/persona/system/..." /></label>
+            </div>
+            <div class="grid2">
+              <label class="field"><span>顺序</span><input id="moduleLinkOrder" type="number" placeholder="数字越小越靠前" /></label>
+              <label class="field"><span>备注</span><input id="moduleLinkNotes" placeholder="装配备注" /></label>
+            </div>
+            <div class="row"><button onclick="linkSelectedModule()">关联到当前人格</button><button class="blue" onclick="createPatchFromModuleLinks()">由模块清单起草调整</button></div>
+            <div id="personaModulesList" class="list"></div>
+            <h3>模块库列表</h3>
+            <div id="modulesList" class="list"></div>
+          </div>
         </div>
-        <div><h3>档案说明</h3><div class="mutedbox">档案是插件内的人格补充资料，不直接修改 AstrBot 原版 persona。切换 persona 后会重新加载当前人格的 Profile。</div><pre id="profileRaw">暂无</pre></div>
-      </div></section>
+      </section>
 
-      <section id="tab-captures" class="section"><div class="capture-layout"><div><div class="row"><input id="sessionFilter" list="sessions" placeholder="按 session_id 过滤"/><datalist id="sessions"></datalist><button onclick="loadCaptures()">刷新</button></div><div id="capturesList" class="list"></div></div><div><pre id="captureDetail">点击捕获记录查看详情</pre></div></div></section>
+      <section id="tab-patches" class="section">
+        <div class="split">
+          <div class="stack">
+            <h3>调整草案</h3>
+            <div class="warn">这是唯一应用入口。快照、观察和模块都只能先生成草案，不能直接写 persona。</div>
+            <label class="field"><span>patch_id</span><input id="patchIdEditing" readonly placeholder="点击草案列表后填入；留空表示新草案" /></label>
+            <label class="field"><span>触发原因</span><input id="patchTrigger" placeholder="为什么需要调整" /></label>
+            <label class="field"><span>调整项 JSON 或备注</span><textarea id="patchChanges" placeholder='例如 [{"aspect":"语气","after":"更短"}]'></textarea></label>
+            <label class="field"><span>base_prompt（安全检查基线）</span><textarea id="patchBase"></textarea></label>
+            <label class="field"><span>proposed_prompt（拟议写入内容）</span><textarea id="patchProposed"></textarea></label>
+            <div class="row"><button onclick="createOrUpdatePatch()">保存草案</button><button class="secondary" onclick="resetPatchEditor()">起草新草案</button></div>
+            <details class="details"><summary>放弃 pending 草案</summary><div class="row" style="margin-top:8px"><button class="danger" onclick="deleteSelectedPatch()">放弃草案</button></div></details>
+          </div>
+          <div class="stack">
+            <h3>草案列表</h3><div id="patchesList" class="list"></div>
+            <h3>差异与审批</h3><div id="patchDetail" class="note mini">选择一份草案查看详情。</div>
+            <div class="row"><button class="good" onclick="approveSelectedPatch()">审批</button><button class="danger" onclick="applySelectedPatch()">应用到人格</button><button class="danger" onclick="approveAndApplySelectedPatch()">直接审批并应用到人格</button></div>
+            <pre id="patchDiff" class="diff">这里会显示 diff</pre>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-snapshots" class="section">
+        <div class="split">
+          <div class="stack">
+            <h3>版本记录</h3>
+            <div class="note mini">版本只用于留档和回滚参考；由版本起草后仍需进入调整草案审批。</div>
+            <label class="field"><span>snapshot_id</span><input id="snapshotId" readonly placeholder="点击版本列表后填入" /></label>
+            <label class="field"><span>标签</span><input id="snapshotLabel" placeholder="版本标签" /></label>
+            <label class="field"><span>说明</span><textarea id="snapshotNotes" placeholder="版本说明"></textarea></label>
+            <label class="field"><span>内容</span><textarea id="snapshotBody" readonly placeholder="版本内容"></textarea></label>
+            <div class="row"><button onclick="createCurrentSnapshot()">留存当前版本</button><button onclick="saveSnapshot()">保存说明</button><button class="blue" onclick="createPatchFromSnapshot()">由版本起草调整</button><button class="secondary" onclick="resetSnapshotEditor()">收起</button></div>
+            <details class="details"><summary>低频维护</summary><div class="row" style="margin-top:8px"><button class="danger" onclick="deleteSnapshot()">移除版本记录</button></div></details>
+          </div>
+          <div><h3>当前人格版本列表</h3><div id="snapshotsList" class="list"></div></div>
+        </div>
+      </section>
+
+      <section id="tab-observations" class="section">
+        <div class="split">
+          <div class="stack">
+            <h3>观察</h3>
+            <div class="note mini">观察只作为起草依据，不会直接改 prompt。</div>
+            <label class="field"><span>记录 ID</span><input id="obsId" readonly placeholder="点击列表后填入；留空表示新记录" /></label>
+            <label class="field"><span>来源</span><input id="obsSource" placeholder="主人反馈 / 会话 / 捕获记录" /></label>
+            <label class="field"><span>内容</span><textarea id="obsContent" placeholder="观察事实或反馈"></textarea></label>
+            <label class="field"><span>理解</span><textarea id="obsInterpretation" placeholder="对观察的解读"></textarea></label>
+            <label class="field"><span>情绪标记</span><input id="obsEmotion" placeholder="认真 / 轻松 / 警惕..." /></label>
+            <div class="row"><button onclick="saveObservation()">保存观察</button><button class="secondary" onclick="resetObservationEditor()">记录新观察</button></div>
+            <details class="details"><summary>低频维护</summary><div class="row" style="margin-top:8px"><button class="danger" onclick="deleteObservation()">移除观察</button></div></details>
+          </div>
+          <div><h3>当前人格观察列表</h3><div id="observationsList" class="list"></div></div>
+        </div>
+      </section>
+
+      <section id="tab-captures" class="section">
+        <div class="capture-layout">
+          <div class="stack"><h3>请求捕获</h3><div class="note mini">只读排查：不生成、不审批、不应用调整。</div><div class="row"><input id="sessionFilter" list="sessions" placeholder="按 session_id 过滤"/><datalist id="sessions"></datalist><button onclick="loadCaptures()">刷新</button></div><div id="capturesList" class="list"></div></div>
+          <div><h3>捕获详情</h3><pre id="captureDetail">点击捕获记录查看详情</pre></div>
+        </div>
+      </section>
     </div>
   </main>
 </div>
 <div id="toast" class="toast hidden"></div>
+
 <script>
-const apiBase='./api'; const $=id=>document.getElementById(id);
-let state={personas:[], personaId:'', persona:null, selectedPatch:null, selectedSnapshot:null, selectedTemplate:null, selectedObservation:null, profile:null, activeTab:'observations'};
+const apiBase='./api';
+const $=id=>document.getElementById(id);
+let state={personas:[],personaId:'',persona:null,selectedPatch:null,selectedSnapshot:null,selectedModule:null,selectedObservation:null,profile:null,activeTab:'persona'};
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function preview(s,n=150){s=String(s??'').replace(/\s+/g,' ').trim();return s.length>n?s.slice(0,n)+'…':s;}
 function statusText(s){return {pending:'待审批',approved:'已审批',applied:'已应用',deleted:'已移除'}[s]||s||'-';}
-function preview(s,n=140){s=String(s??'').replace(/\s+/g,' ').trim();return s.length>n?s.slice(0,n)+'…':s;}
-function toast(msg){$('toast').textContent=msg;$('toast').classList.remove('hidden');setTimeout(()=>$('toast').classList.add('hidden'),3600)}
-async function api(path,opt={}){const r=await fetch(apiBase+path,{headers:{'Content-Type':'application/json'},...opt});const data=await r.json().catch(()=>({ok:false,error:'响应格式错误'}));if(!data.ok) throw new Error(data.error||`HTTP ${r.status}`);return data;}
+function toast(msg){$('toast').textContent=msg;$('toast').classList.remove('hidden');setTimeout(()=>$('toast').classList.add('hidden'),3600);}
+async function api(path,opt={}){const res=await fetch(apiBase+path,{headers:{'Content-Type':'application/json'},...opt});const data=await res.json().catch(()=>({ok:false,error:'响应格式错误'}));if(!data.ok)throw new Error(data.error||`HTTP ${res.status}`);return data;}
 function selectedPersona(){return $('personaSelect').value||state.personaId;}
-function switchTab(tab){state.activeTab=tab;document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));$('tab-'+tab).classList.add('active');}
-async function reloadAll(){await loadPersonas(); await loadPersonaScoped(); await loadTemplates(); await loadCaptures();}
-async function loadPersonas(){const data=await api('/personas');state.personas=data.items||[];$('personaSelect').innerHTML=state.personas.map(p=>`<option value="${esc(p.persona_id)}">${esc(p.persona_id)}</option>`).join(''); if(!state.personaId && state.personas[0]) state.personaId=state.personas[0].persona_id; $('personaSelect').value=state.personaId; await loadPersonaDetail();}
-async function loadPersonaDetail(){const pid=selectedPersona(); if(!pid)return; state.personaId=pid; const card=state.personas.find(p=>p.persona_id===pid)||{}; $('kObs').textContent=card.observation_count||0; $('kPatch').textContent=card.patch_count||0; $('kLen').textContent=card.system_prompt_len||0; const d=await api('/personas/'+encodeURIComponent(pid)); state.persona=d.item; $('personaCard').innerHTML=`<b>${esc(pid)}</b><br>提示词 ${esc((d.item.system_prompt||'').length)} 字<br><span class="mini">工具 ${esc((d.item.tools||[]).length)} · 技能 ${esc((d.item.skills||[]).length)}</span>`; $('personaPrompt').textContent=d.item.system_prompt||''; if(!$('patchBase').value) $('patchBase').value=d.item.system_prompt||'';}
-$('personaSelect').addEventListener('change',async()=>{state.personaId=selectedPersona(); resetObservationEditor(); resetPatchEditor(); resetSnapshotEditor(); await loadPersonaDetail(); await loadPersonaScoped();});
+function switchTab(tab){state.activeTab=tab;document.querySelectorAll('.tab').forEach(btn=>btn.classList.toggle('active',btn.dataset.tab===tab));document.querySelectorAll('.section').forEach(sec=>sec.classList.remove('active'));$('tab-'+tab).classList.add('active');}
+async function reloadAll(){await loadPersonas();await loadPersonaScoped();await loadModules();await loadCaptures();}
+async function loadPersonas(){const data=await api('/personas');state.personas=data.items||[];$('personaSelect').innerHTML=state.personas.map(p=>`<option value="${esc(p.persona_id)}">${esc(p.persona_id)}</option>`).join('');if(!state.personaId&&state.personas[0])state.personaId=state.personas[0].persona_id;$('personaSelect').value=state.personaId;await loadPersonaDetail();}
+async function loadPersonaDetail(){const pid=selectedPersona();if(!pid)return;state.personaId=pid;const card=state.personas.find(p=>p.persona_id===pid)||{};$('kObs').textContent=card.observation_count||0;$('kPatch').textContent=card.patch_count||0;$('kLen').textContent=card.system_prompt_len||0;const data=await api('/personas/'+encodeURIComponent(pid));state.persona=data.item;const prompt=data.item.system_prompt||'';$('personaCard').innerHTML=`<b>${esc(pid)}</b><br>prompt ${prompt.length} 字<br><span class="mini">工具 ${(data.item.tools||[]).length} · 技能 ${(data.item.skills||[]).length}</span>`;$('personaSummary').innerHTML=`<b>${esc(pid)}</b> · 当前 prompt ${prompt.length} 字 · begin_dialogs ${(data.item.begin_dialogs||[]).length}`;$('personaPrompt').textContent=prompt;if(!$('patchBase').value)$('patchBase').value=prompt;}
+$('personaSelect').addEventListener('change',async()=>{state.personaId=selectedPersona();resetObservationEditor();resetPatchEditor();resetSnapshotEditor();resetModuleEditor();await loadPersonaDetail();await loadPersonaScoped();});
 async function loadPersonaScoped(){await Promise.all([loadObservations(),loadPatches(),loadSnapshots(),loadProfile(),loadPersonaModules()]);}
 
-function resetObservationEditor(){state.selectedObservation=null; $('obsId').value=''; $('obsSource').value=''; $('obsContent').value=''; $('obsInterpretation').value=''; $('obsEmotion').value='';}
-async function loadObservations(){const pid=selectedPersona(); const data=await api('/observations?persona_id='+encodeURIComponent(pid)+'&limit=120'); $('observationsList').innerHTML=(data.items||[]).map(o=>`<div class="item" onclick="viewObservation(${o.id})"><div class="item-title">#${o.id} ${esc(o.source||'观察记录')}</div><div class="item-meta">${esc(o.timestamp_iso)} · ${esc(o.emotion||'')}</div><div>${esc(preview(o.content,220))}</div></div>`).join('')||'<div class="mutedbox">暂无观察记录</div>';}
-async function viewObservation(id){const data=await api('/observations/'+id); const o=data.item; state.selectedObservation=o; $('obsId').value=o.id; $('obsSource').value=o.source||''; $('obsContent').value=o.content||''; $('obsInterpretation').value=o.interpretation||''; $('obsEmotion').value=o.emotion||'';}
-async function saveObservation(){const id=$('obsId').value.trim(); const body={persona_id:selectedPersona(),source:$('obsSource').value,content:$('obsContent').value,interpretation:$('obsInterpretation').value,emotion:$('obsEmotion').value}; if(id){const data=await api('/observations/'+id,{method:'PATCH',body:JSON.stringify(body)}); toast('观察已保存'); await loadObservations(); await viewObservation(data.item.id);}else{const data=await api('/observations',{method:'POST',body:JSON.stringify(body)}); toast('观察已记录'); await loadObservations(); await viewObservation(data.id); await loadPersonas();}}
-async function deleteObservation(){const id=$('obsId').value.trim(); if(!id)return toast('请先查看一条观察记录'); if(!confirm(`确定移除观察记录 #${id} 吗？`))return; await api('/observations/'+id+'?persona_id='+encodeURIComponent(selectedPersona()),{method:'DELETE'}); toast('观察已移除'); resetObservationEditor(); await loadObservations(); await loadPersonas();}
+async function loadProfile(){const pid=selectedPersona();if(!pid)return;const data=await api('/profiles/'+encodeURIComponent(pid));const p=data.item||{};state.profile=p;$('profileDisplay').value=p.display_name||'';$('profileArchetype').value=p.archetype||'';$('profileNotes').value=p.notes||'';}
+async function saveProfile(){const pid=selectedPersona();await api('/profiles/'+encodeURIComponent(pid),{method:'POST',body:JSON.stringify({display_name:$('profileDisplay').value,archetype:$('profileArchetype').value,notes:$('profileNotes').value})});toast('备注已保存');await loadProfile();}
 
-function parseChanges(){const raw=$('patchChanges').value.trim(); if(!raw)return []; try{return JSON.parse(raw)}catch{return [{aspect:'备注',after:raw,reason:'人工草案备注'}]}}
-function resetPatchEditor(){state.selectedPatch=null; $('patchIdEditing').value=''; $('patchTrigger').value=''; $('patchChanges').value=''; $('patchBase').value=state.persona?.system_prompt||''; $('patchProposed').value=''; $('patchDetail').textContent='选择一份草案查看详情。'; $('patchDiff').textContent='这里会显示 diff';}
-async function createOrUpdatePatch(){const pid=selectedPersona(); const patchId=$('patchIdEditing').value.trim(); const body={persona_id:pid,trigger:$('patchTrigger').value,changes:parseChanges(),base_prompt:$('patchBase').value,proposed_prompt:$('patchProposed').value,notes:$('patchChanges').value}; if(patchId){const data=await api('/patches/'+encodeURIComponent(patchId),{method:'PATCH',body:JSON.stringify(body)}); toast('调整草案已保存'); selectPatch(data.item);} else {const data=await api('/patches',{method:'POST',body:JSON.stringify(body)}); toast('调整草案已起草'); await loadPatches(); await selectPatchById(data.patch_id);} await loadPatches(); await loadPersonas();}
-async function loadPatches(){const pid=selectedPersona(); const data=await api('/patches?persona_id='+encodeURIComponent(pid)+'&limit=120'); $('patchesList').innerHTML=(data.items||[]).map(p=>`<div class="item" onclick="selectPatchById('${esc(p.patch_id)}')"><div class="item-title">${esc(p.patch_id)} <span class="pill status-${esc(p.status)}">${esc(statusText(p.status))}</span></div><div class="item-meta">${esc(p.timestamp_iso)} · ${esc(p.trigger||'无触发原因')}</div><div>${esc(preview((p.changes||[]).map?.(x=>x.after||x.aspect||JSON.stringify(x)).join(' / ')||'',160))}</div></div>`).join('')||'<div class="mutedbox">暂无调整草案</div>';}
-async function selectPatchById(id){const data=await api('/patches/'+encodeURIComponent(id)); selectPatch(data.item)}
-function selectPatch(p){state.selectedPatch=p; $('patchIdEditing').value=p.patch_id; $('patchTrigger').value=p.trigger||''; $('patchChanges').value=JSON.stringify(p.changes||[],null,2); $('patchBase').value=p.base_prompt||''; $('patchProposed').value=p.proposed_prompt||''; $('patchDetail').innerHTML=`<b>${esc(p.patch_id)}</b> <span class="pill status-${esc(p.status)}">${esc(statusText(p.status))}</span><br>persona_id：${esc(p.persona_id)}<br>审批人：${esc(p.approved_by||'-')}<br>应用时间：${esc(p.applied_at||'-')}<br><span class="dangerText">应用入口只在这里：审批后应用，或人类确认后直接审批并应用。</span>`; $('patchDiff').textContent=p.diff||'（无差异）';}
-async function deleteSelectedPatch(){if(!state.selectedPatch)return toast('请先查看一份草案'); if(!confirm(`只允许放弃 pending 草案。确定移除 ${state.selectedPatch.patch_id} 吗？`))return; await api('/patches/'+encodeURIComponent(state.selectedPatch.patch_id),{method:'DELETE'}); toast('pending 草案已放弃'); resetPatchEditor(); await loadPatches(); await loadPersonas();}
-async function approveSelectedPatch(){if(!state.selectedPatch)return toast('请先查看一份草案'); await api('/patches/'+encodeURIComponent(state.selectedPatch.patch_id)+'/approve',{method:'POST',body:JSON.stringify({approved_by:'前端人工审批'})}); toast('调整已审批'); await loadPatches(); await selectPatchById(state.selectedPatch.patch_id);}
-async function applySelectedPatch(){if(!state.selectedPatch)return toast('请先查看一份草案'); if(!confirm(`确定应用已审批调整 ${state.selectedPatch.patch_id} 到 persona_id=${state.selectedPatch.persona_id} 吗？后端仍会检查 base_prompt。`))return; await api('/patches/'+encodeURIComponent(state.selectedPatch.patch_id)+'/apply',{method:'POST',body:JSON.stringify({})}); toast('调整已应用'); await loadPatches(); await loadPersonas(); await selectPatchById(state.selectedPatch.patch_id);}
-async function approveAndApplySelectedPatch(){if(!state.selectedPatch)return toast('请先查看一份草案'); if(!confirm(`确定直接审批并应用调整 ${state.selectedPatch.patch_id} 到 persona_id=${state.selectedPatch.persona_id} 吗？这是人类显式操作，不是后台自动审批。`))return; await api('/patches/'+encodeURIComponent(state.selectedPatch.patch_id)+'/apply',{method:'POST',body:JSON.stringify({auto_approve:true,approved_by:'前端人工直接审批'})}); toast('调整已直接审批并应用'); await loadPatches(); await loadPersonas(); await selectPatchById(state.selectedPatch.patch_id);}
+function resetObservationEditor(){state.selectedObservation=null;$('obsId').value='';$('obsSource').value='';$('obsContent').value='';$('obsInterpretation').value='';$('obsEmotion').value='';}
+async function loadObservations(){const pid=selectedPersona();if(!pid)return;const data=await api('/observations?persona_id='+encodeURIComponent(pid)+'&limit=120');$('observationsList').innerHTML=(data.items||[]).map(o=>`<div class="item" onclick="viewObservation(${o.id})"><div class="item-title">#${o.id} ${esc(o.source||'观察')}</div><div class="item-meta">${esc(o.timestamp_iso)} · ${esc(o.emotion||'')}</div><div>${esc(preview(o.content,220))}</div></div>`).join('')||'<div class="note">暂无观察</div>';}
+async function viewObservation(id){const data=await api('/observations/'+id);const o=data.item;state.selectedObservation=o;$('obsId').value=o.id;$('obsSource').value=o.source||'';$('obsContent').value=o.content||'';$('obsInterpretation').value=o.interpretation||'';$('obsEmotion').value=o.emotion||'';}
+async function saveObservation(){const id=$('obsId').value.trim();const body={persona_id:selectedPersona(),source:$('obsSource').value,content:$('obsContent').value,interpretation:$('obsInterpretation').value,emotion:$('obsEmotion').value};if(id){const data=await api('/observations/'+id,{method:'PATCH',body:JSON.stringify(body)});toast('观察已保存');await loadObservations();await viewObservation(data.item.id);}else{const data=await api('/observations',{method:'POST',body:JSON.stringify(body)});toast('观察已记录');await loadObservations();await viewObservation(data.id);await loadPersonas();}}
+async function deleteObservation(){const id=$('obsId').value.trim();if(!id)return toast('请先选择观察');if(!confirm(`确定移除观察 #${id} 吗？`))return;await api('/observations/'+id+'?persona_id='+encodeURIComponent(selectedPersona()),{method:'DELETE'});toast('观察已移除');resetObservationEditor();await loadObservations();await loadPersonas();}
 
-function resetSnapshotEditor(){state.selectedSnapshot=null; $('snapshotId').value=''; $('snapshotLabel').value=''; $('snapshotNotes').value=''; $('snapshotBody').value='';}
-async function loadSnapshots(){const pid=selectedPersona(); const data=await api('/snapshots?persona_id='+encodeURIComponent(pid)+'&limit=100'); $('snapshotsList').innerHTML=(data.items||[]).map(s=>`<div class="item" onclick="viewSnapshot('${esc(s.snapshot_id)}')"><div class="item-title">${esc(s.label||s.snapshot_id)}</div><div class="item-meta">${esc(s.timestamp_iso)} · ${esc(s.source)} · ${esc(s.content_len)} 字</div><div>${esc(s.snapshot_id)}</div></div>`).join('')||'<div class="mutedbox">暂无快照</div>';}
-async function createCurrentSnapshot(){const pid=selectedPersona(); const data=await api('/snapshots',{method:'POST',body:JSON.stringify({persona_id:pid,label:`手动当前人格快照：${pid}`})}); toast('版本已留存：'+data.snapshot_id); await loadSnapshots(); await viewSnapshot(data.snapshot_id);}
-async function viewSnapshot(id){const data=await api('/snapshots/'+encodeURIComponent(id)); const s=data.item; state.selectedSnapshot=s; $('snapshotId').value=s.snapshot_id; $('snapshotLabel').value=s.label||''; $('snapshotNotes').value=s.metadata?.notes||''; $('snapshotBody').value=s.content||'';}
-async function saveSnapshot(){const id=$('snapshotId').value.trim(); if(!id)return toast('请先查看一个版本'); const body={persona_id:selectedPersona(),label:$('snapshotLabel').value,metadata:{notes:$('snapshotNotes').value}}; const data=await api('/snapshots/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify(body)}); toast('备注已保存'); await loadSnapshots(); await viewSnapshot(data.item.snapshot_id);}
-async function deleteSnapshot(){const id=$('snapshotId').value.trim(); if(!id)return toast('请先查看一个版本'); if(!confirm(`确定移除插件快照 ${id} 吗？不会影响原版 persona。`))return; await api('/snapshots/'+encodeURIComponent(id)+'?persona_id='+encodeURIComponent(selectedPersona()),{method:'DELETE'}); toast('快照已移除'); resetSnapshotEditor(); await loadSnapshots();}
-async function createPatchFromSnapshot(){const id=$('snapshotId').value.trim(); if(!id)return toast('请先查看一个版本'); const data=await api('/snapshots/'+encodeURIComponent(id)+'/patch',{method:'POST',body:JSON.stringify({persona_id:selectedPersona()})}); toast('已由该版本起草 pending 调整：'+data.patch_id); switchTab('patches'); await loadPatches(); await selectPatchById(data.patch_id);}
+function parseChanges(){const raw=$('patchChanges').value.trim();if(!raw)return [];try{return JSON.parse(raw);}catch{return [{aspect:'备注',after:raw,reason:'人工草案备注'}];}}
+function resetPatchEditor(){state.selectedPatch=null;$('patchIdEditing').value='';$('patchTrigger').value='';$('patchChanges').value='';$('patchBase').value=state.persona?.system_prompt||'';$('patchProposed').value='';$('patchDetail').textContent='选择一份草案查看详情。';$('patchDiff').textContent='这里会显示 diff';}
+async function createOrUpdatePatch(){const patchId=$('patchIdEditing').value.trim();const body={persona_id:selectedPersona(),trigger:$('patchTrigger').value,changes:parseChanges(),base_prompt:$('patchBase').value,proposed_prompt:$('patchProposed').value,notes:$('patchChanges').value};if(patchId){const data=await api('/patches/'+encodeURIComponent(patchId),{method:'PATCH',body:JSON.stringify(body)});toast('调整草案已保存');selectPatch(data.item);}else{const data=await api('/patches',{method:'POST',body:JSON.stringify(body)});toast('调整草案已起草');await loadPatches();await selectPatchById(data.patch_id);}await loadPatches();await loadPersonas();}
+async function loadPatches(){const pid=selectedPersona();if(!pid)return;const data=await api('/patches?persona_id='+encodeURIComponent(pid)+'&limit=120');$('patchesList').innerHTML=(data.items||[]).map(p=>`<div class="item" onclick="selectPatchById('${esc(p.patch_id)}')"><div class="item-title">${esc(p.patch_id)} <span class="pill status-${esc(p.status)}">${esc(statusText(p.status))}</span></div><div class="item-meta">${esc(p.timestamp_iso)} · ${esc(p.trigger||'无触发原因')}</div><div>${esc(preview((p.changes||[]).map(x=>x.after||x.aspect||JSON.stringify(x)).join(' / '),170))}</div></div>`).join('')||'<div class="note">暂无调整草案</div>';}
+async function selectPatchById(id){const data=await api('/patches/'+encodeURIComponent(id));selectPatch(data.item);}
+function selectPatch(p){state.selectedPatch=p;$('patchIdEditing').value=p.patch_id;$('patchTrigger').value=p.trigger||'';$('patchChanges').value=JSON.stringify(p.changes||[],null,2);$('patchBase').value=p.base_prompt||'';$('patchProposed').value=p.proposed_prompt||'';$('patchDetail').innerHTML=`<b>${esc(p.patch_id)}</b> <span class="pill status-${esc(p.status)}">${esc(statusText(p.status))}</span><br>persona_id：${esc(p.persona_id)}<br>审批人：${esc(p.approved_by||'-')}<br>应用时间：${esc(p.applied_at||'-')}<br><b>应用入口只在这里。</b>`;$('patchDiff').textContent=p.diff||'（无差异）';}
+async function deleteSelectedPatch(){if(!state.selectedPatch)return toast('请先选择草案');if(!confirm(`只允许放弃 pending 草案。确定放弃 ${state.selectedPatch.patch_id} 吗？`))return;await api('/patches/'+encodeURIComponent(state.selectedPatch.patch_id),{method:'DELETE'});toast('草案已放弃');resetPatchEditor();await loadPatches();await loadPersonas();}
+async function approveSelectedPatch(){if(!state.selectedPatch)return toast('请先选择草案');await api('/patches/'+encodeURIComponent(state.selectedPatch.patch_id)+'/approve',{method:'POST',body:JSON.stringify({approved_by:'前端人工审批'})});toast('调整已审批');await loadPatches();await selectPatchById(state.selectedPatch.patch_id);}
+async function applySelectedPatch(){if(!state.selectedPatch)return toast('请先选择草案');if(!confirm(`确定应用到人格 ${state.selectedPatch.persona_id} 吗？后端会校验 base_prompt。`))return;await api('/patches/'+encodeURIComponent(state.selectedPatch.patch_id)+'/apply',{method:'POST',body:JSON.stringify({})});toast('调整已应用到人格');await loadPatches();await loadPersonas();await selectPatchById(state.selectedPatch.patch_id);}
+async function approveAndApplySelectedPatch(){if(!state.selectedPatch)return toast('请先选择草案');if(!confirm(`确定直接审批并应用到人格 ${state.selectedPatch.persona_id} 吗？`))return;await api('/patches/'+encodeURIComponent(state.selectedPatch.patch_id)+'/apply',{method:'POST',body:JSON.stringify({auto_approve:true,approved_by:'前端人工直接审批'})});toast('已直接审批并应用到人格');await loadPatches();await loadPersonas();await selectPatchById(state.selectedPatch.patch_id);}
 
+function resetSnapshotEditor(){state.selectedSnapshot=null;$('snapshotId').value='';$('snapshotLabel').value='';$('snapshotNotes').value='';$('snapshotBody').value='';}
+async function loadSnapshots(){const pid=selectedPersona();if(!pid)return;const data=await api('/snapshots?persona_id='+encodeURIComponent(pid)+'&limit=100');$('snapshotsList').innerHTML=(data.items||[]).map(s=>`<div class="item" onclick="viewSnapshot('${esc(s.snapshot_id)}')"><div class="item-title">${esc(s.label||s.snapshot_id)}</div><div class="item-meta">${esc(s.timestamp_iso)} · ${esc(s.source)} · ${esc(s.content_len)} 字</div><div>${esc(s.snapshot_id)}</div></div>`).join('')||'<div class="note">暂无版本记录</div>';}
+async function createCurrentSnapshot(){const pid=selectedPersona();if(!pid)return;const data=await api('/snapshots',{method:'POST',body:JSON.stringify({persona_id:pid,label:`手动留存：${pid}`})});toast('版本已留存：'+data.snapshot_id);await loadSnapshots();await viewSnapshot(data.snapshot_id);}
+async function viewSnapshot(id){const data=await api('/snapshots/'+encodeURIComponent(id));const s=data.item;state.selectedSnapshot=s;$('snapshotId').value=s.snapshot_id;$('snapshotLabel').value=s.label||'';$('snapshotNotes').value=s.metadata?.notes||'';$('snapshotBody').value=s.content||'';}
+async function saveSnapshot(){const id=$('snapshotId').value.trim();if(!id)return toast('请先选择版本');const data=await api('/snapshots/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify({persona_id:selectedPersona(),label:$('snapshotLabel').value,metadata:{notes:$('snapshotNotes').value}})});toast('版本说明已保存');await loadSnapshots();await viewSnapshot(data.item.snapshot_id);}
+async function deleteSnapshot(){const id=$('snapshotId').value.trim();if(!id)return toast('请先选择版本');if(!confirm(`确定移除插件版本记录 ${id} 吗？不会影响原版 persona。`))return;await api('/snapshots/'+encodeURIComponent(id)+'?persona_id='+encodeURIComponent(selectedPersona()),{method:'DELETE'});toast('版本记录已移除');resetSnapshotEditor();await loadSnapshots();}
+async function createPatchFromSnapshot(){const id=$('snapshotId').value.trim();if(!id)return toast('请先选择版本');const data=await api('/snapshots/'+encodeURIComponent(id)+'/patch',{method:'POST',body:JSON.stringify({persona_id:selectedPersona()})});toast('已由版本起草调整：'+data.patch_id);switchTab('patches');await loadPatches();await selectPatchById(data.patch_id);}
 
-async function loadPersonaModules(){const pid=selectedPersona(); if(!pid||!$('personaModulesList'))return; const data=await api('/personas/'+encodeURIComponent(pid)+'/modules'); $('personaModulesList').innerHTML=(data.items||[]).map(l=>`<div class="item"><div class="item-title">${esc(l.template?.name||l.template_id)} <span class="pill">${l.enabled?'启用':'暂时停用'}</span></div><div class="item-meta">#${l.id} · ${esc(l.role||'custom')} · 顺序 ${esc(l.order_index)} · ${esc(l.template_id)}</div><div>${esc(l.notes||l.template?.description||'')}</div><div class="row"><button class="secondary" onclick="toggleModuleLink(${l.id},${l.enabled?0:1},'${esc(l.role||'custom')}',${Number(l.order_index)||0})">${l.enabled?'暂时停用':'启用'}</button><button class="secondary" onclick="moveModuleLink(${l.id},'${esc(l.role||'custom')}',${Number(l.order_index)||0},-10)">上移</button><button class="secondary" onclick="moveModuleLink(${l.id},'${esc(l.role||'custom')}',${Number(l.order_index)||0},10)">下移</button><button class="danger" onclick="unlinkModule(${l.id})">解除关联</button></div></div>`).join('')||'<div class="mutedbox">当前人格还没有关联模块</div>';}
-async function linkSelectedModule(){const pid=selectedPersona(); const body={module_id:$('moduleLinkTemplate').value,role:$('moduleLinkRole').value||'custom',enabled:true,order_index:Number($('moduleLinkOrder').value||0),notes:$('moduleLinkNotes').value}; await api('/personas/'+encodeURIComponent(pid)+'/modules',{method:'POST',body:JSON.stringify(body)}); toast('已关联到当前人格'); await loadPersonaModules();}
-async function toggleModuleLink(id,enabled,role,order){const pid=selectedPersona(); await api('/personas/'+encodeURIComponent(pid)+'/modules/'+id,{method:'PATCH',body:JSON.stringify({enabled:!!enabled,role,order_index:order})}); toast(enabled?'已启用':'已暂时停用'); await loadPersonaModules();}
-async function moveModuleLink(id,role,order,delta){const pid=selectedPersona(); await api('/personas/'+encodeURIComponent(pid)+'/modules/'+id,{method:'PATCH',body:JSON.stringify({role,order_index:(Number(order)||0)+delta})}); toast('顺序已调整'); await loadPersonaModules();}
-async function unlinkModule(id){const pid=selectedPersona(); if(!confirm('确定解除关联吗？不会删除模块本体，也不会修改原版 persona。'))return; await api('/personas/'+encodeURIComponent(pid)+'/modules/'+id,{method:'DELETE'}); toast('已解除关联'); await loadPersonaModules();}
-async function createPatchFromModuleLinks(){const pid=selectedPersona(); const data=await api('/personas/'+encodeURIComponent(pid)+'/modules/patch',{method:'POST',body:JSON.stringify({notes:'由前端模块清单起草'})}); toast('已由模块清单起草 pending 调整：'+data.patch_id); switchTab('patches'); await loadPatches(); await selectPatchById(data.patch_id);}
+function moduleMetadata(){return {kind:'module',role:$('moduleRole').value||'custom',source:$('moduleSource').value||'manual'};}
+function resetModuleEditor(){state.selectedModule=null;$('moduleId').value='';$('moduleId').readOnly=false;$('moduleName').value='';$('moduleRole').value='custom';$('moduleSource').value='manual';$('moduleDescription').value='';$('moduleContent').value='';}
+async function loadModules(){const data=await api('/templates');const items=data.items||[];$('modulesList').innerHTML=items.map(m=>`<div class="item" onclick="viewModule('${esc(m.template_id)}')"><div class="item-title">${esc(m.name||m.template_id)}</div><div class="item-meta">${esc(m.template_id)} · ${esc(m.metadata?.role||'custom')} · ${esc(m.metadata?.source||'manual')} · ${esc((m.content||'').length)} 字</div><div>${esc(m.description||'')}</div></div>`).join('')||'<div class="note">暂无模块</div>';$('moduleLinkModule').innerHTML=items.map(m=>`<option value="${esc(m.template_id)}">${esc(m.name||m.template_id)} · ${esc(m.template_id)}</option>`).join('');}
+async function viewModule(id){if(!confirm('确定展开模块内容吗？里面可能包含敏感提示词内容。'))return;const data=await api('/templates/'+encodeURIComponent(id));const m=data.item;state.selectedModule=m;$('moduleId').value=m.template_id;$('moduleId').readOnly=true;$('moduleName').value=m.name||'';$('moduleRole').value=m.metadata?.role||'custom';$('moduleSource').value=m.metadata?.source||'manual';$('moduleDescription').value=m.description||'';$('moduleContent').value=m.content||'';}
+async function saveModule(){const id=$('moduleId').value.trim();const body={module_id:id,name:$('moduleName').value,description:$('moduleDescription').value,content:$('moduleContent').value,metadata:moduleMetadata()};if(id&&state.selectedModule){const data=await api('/templates/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify(body)});toast('模块已保存');await loadModules();await viewModule(data.item.template_id);}else{const data=await api('/templates',{method:'POST',body:JSON.stringify(body)});toast('模块已创建');await loadModules();await viewModule(data.module_id||data.template_id);}}
+async function deleteModule(){const id=$('moduleId').value.trim();if(!id)return toast('请先选择模块');if(!confirm(`确定移除模块 ${id} 吗？已有关联需先人工确认影响。`))return;await api('/templates/'+encodeURIComponent(id),{method:'DELETE'});toast('模块已移除');resetModuleEditor();await loadModules();await loadPersonaModules();}
+async function createPatchFromModule(){const id=$('moduleId').value.trim();if(!id)return toast('请先选择模块');const data=await api('/templates/'+encodeURIComponent(id)+'/patch',{method:'POST',body:JSON.stringify({persona_id:selectedPersona()})});toast('已由模块起草调整：'+data.patch_id);switchTab('patches');await loadPatches();await selectPatchById(data.patch_id);}
+async function loadPersonaModules(){const pid=selectedPersona();if(!pid||!$('personaModulesList'))return;const data=await api('/personas/'+encodeURIComponent(pid)+'/modules');$('personaModulesList').innerHTML=(data.items||[]).map(l=>`<div class="item"><div class="item-title">${esc(l.template?.name||l.template_id)} <span class="pill">${l.enabled?'启用':'停用'}</span></div><div class="item-meta">#${l.id} · ${esc(l.role||'custom')} · 顺序 ${esc(l.order_index)} · ${esc(l.template_id)}</div><div>${esc(l.notes||l.template?.description||'')}</div><div class="row"><button class="secondary" onclick="toggleModuleLink(${l.id},${l.enabled?0:1},'${esc(l.role||'custom')}',${Number(l.order_index)||0})">${l.enabled?'停用':'启用'}</button><button class="secondary" onclick="moveModuleLink(${l.id},'${esc(l.role||'custom')}',${Number(l.order_index)||0},-10)">上移</button><button class="secondary" onclick="moveModuleLink(${l.id},'${esc(l.role||'custom')}',${Number(l.order_index)||0},10)">下移</button><button class="ghost" onclick="unlinkModule(${l.id})">解除关联</button></div></div>`).join('')||'<div class="note">当前人格还没有关联模块</div>';}
+async function linkSelectedModule(){const pid=selectedPersona();const body={module_id:$('moduleLinkModule').value,role:$('moduleLinkRole').value||'custom',enabled:true,order_index:Number($('moduleLinkOrder').value||0),notes:$('moduleLinkNotes').value};await api('/personas/'+encodeURIComponent(pid)+'/modules',{method:'POST',body:JSON.stringify(body)});toast('模块已关联到当前人格');await loadPersonaModules();}
+async function toggleModuleLink(id,enabled,role,order){const pid=selectedPersona();await api('/personas/'+encodeURIComponent(pid)+'/modules/'+id,{method:'PATCH',body:JSON.stringify({enabled:!!enabled,role,order_index:order})});toast(enabled?'已启用':'已停用');await loadPersonaModules();}
+async function moveModuleLink(id,role,order,delta){const pid=selectedPersona();await api('/personas/'+encodeURIComponent(pid)+'/modules/'+id,{method:'PATCH',body:JSON.stringify({role,order_index:(Number(order)||0)+delta})});toast('顺序已调整');await loadPersonaModules();}
+async function unlinkModule(id){const pid=selectedPersona();if(!confirm('确定解除关联吗？不会删除模块，也不会修改原版 persona。'))return;await api('/personas/'+encodeURIComponent(pid)+'/modules/'+id,{method:'DELETE'});toast('已解除关联');await loadPersonaModules();}
+async function createPatchFromModuleLinks(){const pid=selectedPersona();const data=await api('/personas/'+encodeURIComponent(pid)+'/modules/patch',{method:'POST',body:JSON.stringify({notes:'由前端模块清单起草'})});toast('已由模块清单起草调整：'+data.patch_id);switchTab('patches');await loadPatches();await selectPatchById(data.patch_id);}
 
-function resetTemplateEditor(){state.selectedTemplate=null; $('templateId').value=''; $('templateId').readOnly=false; $('templateName').value=''; $('templateDescription').value=''; $('templateKind').value=''; $('templateContent').value='';}
-async function loadTemplates(){const data=await api('/templates'); const items=data.items||[]; $('templatesList').innerHTML=items.map(t=>`<div class="item" onclick="viewTemplate('${esc(t.template_id)}')"><div class="item-title">${esc(t.name||t.template_id)}</div><div class="item-meta">${esc(t.template_id)} · ${esc(t.metadata?.kind||'模块')} · ${esc((t.content||'').length)} 字</div><div>${esc(t.description||'')}</div></div>`).join('')||'<div class="mutedbox">暂无模块</div>'; $('moduleLinkTemplate').innerHTML=items.map(t=>`<option value="${esc(t.template_id)}">${esc(t.name||t.template_id)} · ${esc(t.template_id)}</option>`).join('');}
-async function viewTemplate(id){if(!confirm('确定展开模块内容吗？里面可能包含敏感提示词内容。'))return; const data=await api('/templates/'+encodeURIComponent(id)); const t=data.item; state.selectedTemplate=t; $('templateId').value=t.template_id; $('templateId').readOnly=true; $('templateName').value=t.name||''; $('templateDescription').value=t.description||''; $('templateKind').value=t.metadata?.kind||''; $('templateContent').value=t.content||'';}
-async function saveTemplate(){const id=$('templateId').value.trim(); const metadata={kind:$('templateKind').value||'module'}; const body={template_id:id,name:$('templateName').value,description:$('templateDescription').value,content:$('templateContent').value,metadata}; if(id && state.selectedTemplate){const data=await api('/templates/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify(body)}); toast('模块已更新'); await loadTemplates(); await viewTemplate(data.item.template_id);}else{const data=await api('/templates',{method:'POST',body:JSON.stringify(body)}); toast('模块已收纳'); await loadTemplates(); await viewTemplate(data.template_id);}}
-async function deleteTemplate(){const id=$('templateId').value.trim(); if(!id)return toast('请先查看一个模块'); if(!confirm(`确定移除模块 ${id} 吗？`))return; await api('/templates/'+encodeURIComponent(id),{method:'DELETE'}); toast('模块已移除'); resetTemplateEditor(); await loadTemplates();}
-async function createPatchFromTemplate(){const id=$('templateId').value.trim(); if(!id)return toast('请先查看一个模块'); const data=await api('/templates/'+encodeURIComponent(id)+'/patch',{method:'POST',body:JSON.stringify({persona_id:selectedPersona()})}); toast('已由该模块起草 pending 调整：'+data.patch_id); switchTab('patches'); await loadPatches(); await selectPatchById(data.patch_id);}
-
-async function loadProfile(){const pid=selectedPersona(); if(!pid)return; const data=await api('/profiles/'+encodeURIComponent(pid)); const p=data.item; state.profile=p; $('profileDisplay').value=p.display_name||''; $('profileArchetype').value=p.archetype||''; $('profileTemplate').value=p.template_id||''; $('profileNotes').value=p.notes||''; $('profileRaw').textContent=JSON.stringify(p,null,2);}
-async function saveProfile(){const pid=selectedPersona(); const body={display_name:$('profileDisplay').value,archetype:$('profileArchetype').value,template_id:$('profileTemplate').value||null,notes:$('profileNotes').value}; await api('/profiles/'+encodeURIComponent(pid),{method:'POST',body:JSON.stringify(body)}); toast('档案已保存'); await loadProfile();}
-async function deleteProfile(){const pid=selectedPersona(); if(!confirm(`确定清空 persona_id=${pid} 的插件档案吗？不会影响原版 persona。`))return; await api('/profiles/'+encodeURIComponent(pid),{method:'DELETE'}); toast('档案已清空'); await loadProfile();}
-
-async function loadCaptures(){const sess=$('sessionFilter').value.trim(); const data=await api('/captures?limit=80'+(sess?'&session_id='+encodeURIComponent(sess):'')); $('capturesList').innerHTML=(data.items||[]).map(c=>`<div class="item" onclick="viewCapture(${c.id})"><div class="item-title">#${c.id} ${esc(c.persona_id||'')}</div><div class="item-meta">${esc(c.timestamp_iso)} · ${esc(c.session_id||'')}</div><div>${esc(preview(c.prompt,150))}</div></div>`).join('')||'<div class="mutedbox">暂无捕获记录</div>'; const s=await api('/sessions'); $('sessions').innerHTML=(s.items||[]).map(x=>`<option value="${esc(x.session_id)}">${esc(x.count)} · ${esc(x.last_timestamp_iso)}</option>`).join('');}
-async function viewCapture(id){const data=await api('/captures/'+id); $('captureDetail').textContent=JSON.stringify(data.item,null,2);}
-reloadAll().catch(e=>toast(e.message));
+async function loadCaptures(){const sess=$('sessionFilter').value.trim();const data=await api('/captures?limit=80'+(sess?'&session_id='+encodeURIComponent(sess):''));$('capturesList').innerHTML=(data.items||[]).map(c=>`<div class="item" onclick="viewCapture(${c.id})"><div class="item-title">#${c.id} ${esc(c.persona_id||'')}</div><div class="item-meta">${esc(c.timestamp_iso)} · ${esc(c.session_id||'')}</div><div>${esc(preview(c.prompt,150))}</div></div>`).join('')||'<div class="note">暂无请求捕获</div>';const s=await api('/sessions');$('sessions').innerHTML=(s.items||[]).map(x=>`<option value="${esc(x.session_id)}">${esc(x.count)} · ${esc(x.last_timestamp_iso)}</option>`).join('');}
+async function viewCapture(id){const data=await api('/captures/'+id);$('captureDetail').textContent=JSON.stringify(data.item,null,2);}
+reloadAll().catch(err=>toast(err.message));
 </script>
 </body>
 </html>

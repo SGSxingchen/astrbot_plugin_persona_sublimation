@@ -1,7 +1,7 @@
 name: astrbot_plugin_persona_sublimation
 display_name: 人格升华
-desc: "捕获 LLM 请求快照，并提供人格观察、调整审批、模块资产、版本快照、档案 API 与安全 LLM Tools。"
-version: 0.5.0
+desc: "统一人格编排：模块装配、调整草案、人类审批、版本记录、观察与只读请求捕获。"
+version: 0.6.0
 author: SGSxingchen
 repo: "https://github.com/SGSxingchen/astrbot_plugin_persona_sublimation"
 support_platforms:
