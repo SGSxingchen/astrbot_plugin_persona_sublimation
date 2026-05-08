@@ -3,158 +3,126 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>人格升华 - LLM 请求捕获</title>
+  <title>人格升华 Console</title>
   <style>
-    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, sans-serif; background:#f6f7fb; color:#172033; }
-    header { padding:18px 24px; background:#20253a; color:white; }
-    main { display:grid; grid-template-columns: 430px 1fr; gap:16px; padding:16px; }
-    input, button { padding:9px 10px; border:1px solid #cfd5e3; border-radius:8px; font-size:14px; }
-    button { cursor:pointer; background:#315cff; color:white; border-color:#315cff; }
-    .panel { background:white; border:1px solid #e2e6ef; border-radius:12px; overflow:hidden; box-shadow:0 1px 6px #0000000d; }
-    .toolbar { display:flex; gap:8px; padding:12px; border-bottom:1px solid #edf0f6; }
-    .toolbar input { flex:1; }
-    .list { max-height: calc(100vh - 155px); overflow:auto; }
-    .item { padding:12px; border-bottom:1px solid #edf0f6; cursor:pointer; }
-    .item:hover, .item.active { background:#f0f4ff; }
-    .meta { color:#667085; font-size:12px; line-height:1.5; }
-    .prompt { margin-top:6px; white-space:pre-wrap; word-break:break-word; }
-    .detail { padding:16px; max-height: calc(100vh - 120px); overflow:auto; }
-    .empty { padding:28px; color:#667085; }
-    .block { margin:14px 0; border:1px solid #d9dfeb; border-radius:10px; overflow:hidden; }
-    .label { padding:8px 10px; font-weight:700; background:#ecf1ff; border-bottom:1px solid #d9dfeb; }
-    .label.system { background:#fff2cc; }
-    .label.context { background:#e9f7ef; }
-    .label.prompt { background:#fdecef; }
-    pre { margin:0; padding:12px; white-space:pre-wrap; word-break:break-word; overflow:auto; line-height:1.45; }
-    code { background:#eef2f8; padding:2px 5px; border-radius:5px; }
-    .tools span { display:inline-block; margin:4px 6px 4px 0; padding:4px 8px; background:#eef2ff; border-radius:999px; }
-    .notice { margin:16px 16px 0; padding:12px 14px; background:#fff7e6; border:1px solid #ffd591; border-radius:12px; color:#5f3b00; }
-    .notice a { color:#315cff; }
-    .evolution { margin:16px 16px 0; display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; }
-    .mini { background:white; border:1px solid #e2e6ef; border-radius:12px; padding:12px; box-shadow:0 1px 6px #0000000d; }
-    .mini h3 { margin:0 0 8px; font-size:15px; }
-    .mini ul { margin:0; padding-left:18px; color:#475467; font-size:13px; line-height:1.7; }
-    .pill { display:inline-block; margin-left:4px; padding:1px 6px; border-radius:999px; background:#eef2ff; color:#315cff; font-size:12px; }
-    @media (max-width: 900px) { main { grid-template-columns:1fr; } .list { max-height: 45vh; } }
+    :root{
+      --ink:#17130e; --muted:#766c5f; --paper:#f7efe1; --panel:#fffaf0; --panel2:#f1e2c5;
+      --line:#2a21184a; --accent:#c45725; --accent2:#214f45; --blue:#2f5f9f; --danger:#a82f1f;
+      --ok:#28764a; --shadow: 0 18px 50px #40230d20;
+    }
+    *{box-sizing:border-box} body{margin:0;background:radial-gradient(circle at top left,#ffe1b8 0,#f7efe1 34%,#e7d4b3 100%);color:var(--ink);font-family: ui-serif, Georgia, 'Times New Roman', serif;}
+    body:before{content:"";position:fixed;inset:0;pointer-events:none;background:linear-gradient(#00000005 1px,transparent 1px),linear-gradient(90deg,#00000005 1px,transparent 1px);background-size:22px 22px;mix-blend-mode:multiply}
+    header{position:sticky;top:0;z-index:20;background:#21170f;color:#ffe9bf;border-bottom:4px solid var(--accent);box-shadow:0 8px 28px #0004}
+    .top{display:flex;gap:18px;align-items:center;justify-content:space-between;padding:14px 20px}.brand{font-size:22px;font-weight:900;letter-spacing:.04em}.warn{font-size:12px;color:#ffcf8a}.wrap{padding:18px;display:grid;grid-template-columns:330px 1fr;gap:16px}.card{background:var(--panel);border:2px solid var(--line);border-radius:18px;box-shadow:var(--shadow);overflow:hidden}.card h2,.card h3{margin:0;padding:12px 14px;background:#2a2118;color:#ffe9bf;font-size:15px;letter-spacing:.03em}.body{padding:14px}.stack{display:grid;gap:10px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.tab{border:2px solid #2a2118;background:#fff7e8;color:#2a2118;border-radius:999px;padding:9px 13px;font-weight:800;cursor:pointer}.tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+    input,select,textarea,button{font:inherit;border:2px solid #2a211833;border-radius:12px;padding:9px 10px;background:#fffdf8;color:var(--ink)}textarea{width:100%;min-height:92px;resize:vertical;font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;font-size:13px}select,input{width:100%}button{cursor:pointer;font-weight:900;background:#2a2118;color:#fff;border-color:#2a2118}button.secondary{background:#fff7e8;color:#2a2118}button.good{background:var(--ok);border-color:var(--ok)}button.danger{background:var(--danger);border-color:var(--danger)}button:disabled{opacity:.45;cursor:not-allowed}.mini{font-size:12px;color:var(--muted)}.pill{display:inline-block;border-radius:999px;background:#ead7b4;padding:3px 8px;font-size:12px;font-weight:800;margin:2px}.status-pending{background:#ffdf90}.status-approved{background:#b8e5c9}.status-applied{background:#c8d8f2}.list{display:grid;gap:8px;max-height:52vh;overflow:auto;padding-right:4px}.item{background:#fffdf8;border:2px solid #2a211820;border-radius:14px;padding:10px;cursor:pointer}.item:hover,.item.active{border-color:var(--accent);box-shadow:0 0 0 3px #c4572520}.item-title{font-weight:900}.item-meta{font-size:12px;color:var(--muted);line-height:1.45}.split{display:grid;grid-template-columns:minmax(260px,360px) 1fr;gap:12px}.hidden{display:none!important}pre{white-space:pre-wrap;word-break:break-word;margin:0;background:#1f1a16;color:#ffe9bf;border-radius:14px;padding:12px;max-height:48vh;overflow:auto;font-size:12px;line-height:1.45}.diff{background:#161b14}.toast{position:fixed;right:18px;bottom:18px;background:#21170f;color:#ffe9bf;border:2px solid var(--accent);border-radius:14px;padding:12px 14px;box-shadow:var(--shadow);z-index:50;max-width:420px}.kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.kpi div{background:#fff7e8;border:2px solid #2a211820;border-radius:14px;padding:10px}.kpi b{font-size:22px}.section{display:none}.section.active{display:block}.capture-layout{display:grid;grid-template-columns:360px 1fr;gap:12px}.mutedbox{background:#f6ead4;border:2px dashed #2a211840;border-radius:14px;padding:12px}.dangerText{color:var(--danger);font-weight:900}@media(max-width:1050px){.wrap,.split,.capture-layout,.grid2,.grid3{grid-template-columns:1fr}.top{align-items:flex-start;flex-direction:column}.list{max-height:36vh}}
   </style>
 </head>
 <body>
-  <header><h2>人格升华 / LLM 请求捕获与人格迭代</h2></header>
-  <div class="notice">
-    人格迭代 API 已启用：<code>/api/personas</code>、<code>/api/templates</code>、
-    <code>/api/snapshots</code>、<code>/api/observations</code>、<code>/api/patches</code>。
-    页面无内置鉴权，请勿将监听地址暴露到公网。
-  </div>
-  <section class="evolution">
-    <div class="mini"><h3>Personas</h3><ul id="personaStats"><li>加载中...</li></ul></div>
-    <div class="mini"><h3>Templates / Modules</h3><ul id="templateStats"><li>加载中...</li></ul></div>
-    <div class="mini"><h3>Snapshots</h3><ul id="snapshotStats"><li>加载中...</li></ul></div>
-  </section>
-  <main>
-    <section class="panel">
-      <div class="toolbar">
-        <input id="sessionFilter" list="sessions" placeholder="按 session_id 过滤" />
-        <datalist id="sessions"></datalist>
-        <button id="reloadBtn">刷新</button>
-      </div>
-      <div id="list" class="list"><div class="empty">加载中...</div></div>
-    </section>
-    <section class="panel"><div id="detail" class="detail"><div class="empty">点击左侧记录查看详情。</div></div></section>
+<header><div class="top"><div><div class="brand">人格升华 Console</div><div class="warn">无内置鉴权：只在可信网络使用。所有修改必须由人类按钮触发。</div></div><div class="row"><button class="secondary" onclick="reloadAll()">Reload All</button></div></div></header>
+<div class="wrap">
+  <aside class="card">
+    <h2>Persona Control</h2>
+    <div class="body stack">
+      <label><span class="mini">persona_id</span><select id="personaSelect"></select></label>
+      <div id="personaCard" class="mutedbox mini">加载中...</div>
+      <div class="kpi"><div><b id="kObs">0</b><br><span class="mini">observations</span></div><div><b id="kPatch">0</b><br><span class="mini">patches</span></div><div><b id="kLen">0</b><br><span class="mini">prompt chars</span></div></div>
+      <button onclick="createCurrentSnapshot()">Create current snapshot</button>
+      <button class="secondary" onclick="loadPersonaDetail()">Refresh persona prompt</button>
+    </div>
+  </aside>
+  <main class="card">
+    <h2>Human Workflow</h2>
+    <div class="body">
+      <nav class="tabs">
+        <button class="tab active" data-tab="observations" onclick="switchTab('observations')">Observations</button>
+        <button class="tab" data-tab="patches" onclick="switchTab('patches')">Patches</button>
+        <button class="tab" data-tab="snapshots" onclick="switchTab('snapshots')">Snapshots</button>
+        <button class="tab" data-tab="templates" onclick="switchTab('templates')">Templates / Modules</button>
+        <button class="tab" data-tab="captures" onclick="switchTab('captures')">Captures</button>
+      </nav>
+
+      <section id="tab-observations" class="section active">
+        <div class="split">
+          <div class="stack">
+            <h3>Create observation</h3>
+            <input id="obsSource" placeholder="source: owner-feedback / session / capture" />
+            <textarea id="obsContent" placeholder="content（必填）"></textarea>
+            <textarea id="obsInterpretation" placeholder="interpretation"></textarea>
+            <input id="obsEmotion" placeholder="emotion tag" />
+            <button onclick="createObservation()">create observation</button>
+          </div>
+          <div><h3>Observations</h3><div id="observationsList" class="list"></div></div>
+        </div>
+      </section>
+
+      <section id="tab-patches" class="section">
+        <div class="split">
+          <div class="stack">
+            <h3>Create / edit patch draft</h3>
+            <input id="patchIdEditing" placeholder="editing patch_id（空=新建）" readonly />
+            <input id="patchTrigger" placeholder="trigger" />
+            <textarea id="patchChanges" placeholder='changes JSON or notes，例如 [{"aspect":"tone","after":"shorter"}]'></textarea>
+            <textarea id="patchBase" placeholder="base_prompt（默认当前 persona prompt）"></textarea>
+            <textarea id="patchProposed" placeholder="proposed_prompt（可手动编辑；不填则只保存结构化草案）"></textarea>
+            <div class="row"><button onclick="createOrUpdatePatch()">create patch draft</button><button class="secondary" onclick="resetPatchEditor()">new draft</button></div>
+          </div>
+          <div class="stack">
+            <h3>Patches</h3><div id="patchesList" class="list"></div>
+            <h3>Patch Detail</h3><div id="patchDetail" class="mutedbox mini">选择补丁查看 diff。</div>
+            <div class="row"><button class="good" onclick="approveSelectedPatch()">approve</button><button class="danger" onclick="applySelectedPatch()">apply</button><button class="danger" onclick="approveAndApplySelectedPatch()">Approve & Apply</button></div>
+            <pre id="patchDiff" class="diff">diff will appear here</pre>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-snapshots" class="section">
+        <div class="grid2"><div><h3>Snapshots / Baselines</h3><div id="snapshotsList" class="list"></div></div><div><h3>Snapshot Content</h3><pre id="snapshotContent">点击快照查看内容</pre></div></div>
+      </section>
+
+      <section id="tab-templates" class="section">
+        <div class="grid2"><div><h3>Templates / Modules</h3><div id="templatesList" class="list"></div></div><div><h3>Content (click to reveal)</h3><div class="mini dangerText">敏感模块不会自动展开。</div><pre id="templateContent">点击模板/模块后查看内容</pre></div></div>
+      </section>
+
+      <section id="tab-captures" class="section">
+        <div class="capture-layout"><div><div class="row"><input id="sessionFilter" list="sessions" placeholder="session_id filter"/><datalist id="sessions"></datalist><button onclick="loadCaptures()">Refresh</button></div><div id="capturesList" class="list"></div></div><div><pre id="captureDetail">点击 capture 查看详情</pre></div></div>
+      </section>
+    </div>
   </main>
+</div>
+<div id="toast" class="toast hidden"></div>
 <script>
-const apiBase = './api';
-const $ = (id) => document.getElementById(id);
-let activeId = null;
-function esc(s){return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
-function textLen(v){ return typeof v === 'string' ? v.length : JSON.stringify(v ?? '').length; }
-function preview(s, n=80){ s = String(s ?? '').replace(/\s+/g,' ').trim(); return s.length > n ? s.slice(0,n) + '…' : s; }
-
-async function loadEvolution(){
-  try {
-    const profiles = await fetch(`${apiBase}/profiles`).then(r=>r.json());
-    if (profiles.ok) {
-      $('personaStats').innerHTML = profiles.items.map(it => `<li><b>${esc(it.persona_id)}</b> <span class="pill">obs ${esc(it.observation_count)}</span><span class="pill">patch ${esc(it.patch_count)}</span></li>`).join('') || '<li>暂无 persona</li>';
-    }
-  } catch (e) { $('personaStats').innerHTML = '<li>加载失败</li>'; }
-  try {
-    const templates = await fetch(`${apiBase}/templates`).then(r=>r.json());
-    if (templates.ok) {
-      $('templateStats').innerHTML = templates.items.slice(0,8).map(it => `<li title="${esc(it.template_id)}">${esc(it.name || it.template_id)} <span class="pill">${esc(it.metadata?.kind || 'template')}</span></li>`).join('') || '<li>暂无模板</li>';
-    }
-  } catch (e) { $('templateStats').innerHTML = '<li>加载失败</li>'; }
-  try {
-    const snaps = await fetch(`${apiBase}/snapshots?limit=8`).then(r=>r.json());
-    if (snaps.ok) {
-      $('snapshotStats').innerHTML = snaps.items.map(it => `<li><b>${esc(it.persona_id)}</b> ${esc(it.label || it.snapshot_id)}</li>`).join('') || '<li>暂无快照</li>';
-    }
-  } catch (e) { $('snapshotStats').innerHTML = '<li>加载失败</li>'; }
-}
-
-async function loadSessions(){
-  try {
-    const data = await fetch(`${apiBase}/sessions`).then(r=>r.json());
-    if (data.ok) {
-      $('sessions').innerHTML = data.items.map(s => `<option value="${esc(s.session_id)}">${esc(s.count)} 条 · ${esc(s.last_timestamp_iso)}</option>`).join('');
-    }
-  } catch (_) {}
-}
-async function loadList(){
-  const session = $('sessionFilter').value.trim();
-  const url = `${apiBase}/captures?limit=80` + (session ? `&session_id=${encodeURIComponent(session)}` : '');
-  const data = await fetch(url).then(r=>r.json());
-  if(!data.ok){ $('list').innerHTML = `<div class="empty">加载失败：${esc(data.error)}</div>`; return; }
-  if(!data.items.length){ $('list').innerHTML = '<div class="empty">暂无记录。</div>'; return; }
-  $('list').innerHTML = data.items.map(it => `
-    <div class="item ${it.id===activeId?'active':''}" data-id="${it.id}">
-      <div class="meta">#${it.id} · ${esc(it.timestamp_iso)}<br>session: ${esc(it.session_id)}<br>${esc(it.platform)} · ${esc(it.sender_name || it.sender_id || '')}</div>
-      <div class="prompt">${esc(preview(it.prompt, 80))}</div>
-    </div>`).join('');
-  document.querySelectorAll('.item').forEach(el => el.onclick = () => loadDetail(Number(el.dataset.id)));
-}
-function renderField(value){
-  if(value === null || value === undefined) return 'null';
-  if(typeof value === 'string') return value.length ? esc(value) : '(empty)';
-  if(Array.isArray(value) && value.length === 0) return '(empty)';
-  if(typeof value === 'object' && Object.keys(value).length === 0) return '(empty)';
-  return esc(JSON.stringify(value, null, 2));
-}
-async function loadDetail(id){
-  activeId = id;
-  loadSessions();
-  loadList();
-  const data = await fetch(`${apiBase}/captures/${id}`).then(r=>r.json());
-  if(!data.ok){ $('detail').innerHTML = `<div class="empty">加载失败：${esc(data.error)}</div>`; return; }
-  const it = data.item;
-  const fields = [
-    ['prompt', it.prompt],
-    ['session_id', it.session_id],
-    ['image_urls', it.image_urls],
-    ['audio_urls', it.audio_urls],
-    ['extra_user_content_parts', it.extra_user_content_parts],
-    ['func_tool', it.func_tool],
-    ['contexts', it.contexts],
-    ['system_prompt', it.system_prompt],
-    ['tool_calls_result', it.tool_calls_result],
-    ['model', it.model],
-  ];
-  const fieldHtml = fields.map(([name, value]) => `
-    <div class="block">
-      <div class="label">${esc(name)}</div>
-      <pre>${renderField(value)}</pre>
-    </div>`).join('');
-  $('detail').innerHTML = `
-    <h3>请求 #${it.id}</h3>
-    <p class="meta">${esc(it.timestamp_iso)} · origin: ${esc(it.unified_msg_origin)} · sender: ${esc(it.sender_name || it.sender_id || '')}</p>
-    ${fieldHtml}
-  `;
-}
-$('reloadBtn').onclick = loadList;
-$('sessionFilter').addEventListener('keydown', e => { if(e.key === 'Enter') loadEvolution();
-loadSessions();
-loadList(); });
-loadEvolution();
-loadSessions();
-loadList();
+const apiBase='./api'; const $=id=>document.getElementById(id);
+let state={personas:[], personaId:'', persona:null, selectedPatch:null, activeTab:'observations'};
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function preview(s,n=140){s=String(s??'').replace(/\s+/g,' ').trim();return s.length>n?s.slice(0,n)+'…':s;}
+function toast(msg){$('toast').textContent=msg;$('toast').classList.remove('hidden');setTimeout(()=>$('toast').classList.add('hidden'),3200)}
+async function api(path,opt={}){const r=await fetch(apiBase+path,{headers:{'Content-Type':'application/json'},...opt});const data=await r.json().catch(()=>({ok:false,error:'invalid response'}));if(!data.ok) throw new Error(data.error||`HTTP ${r.status}`);return data;}
+function selectedPersona(){return $('personaSelect').value||state.personaId;}
+function switchTab(tab){state.activeTab=tab;document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));$('tab-'+tab).classList.add('active');}
+async function reloadAll(){await loadPersonas(); await loadPersonaScoped(); await loadTemplates(); await loadCaptures();}
+async function loadPersonas(){const data=await api('/personas');state.personas=data.items||[];$('personaSelect').innerHTML=state.personas.map(p=>`<option value="${esc(p.persona_id)}">${esc(p.persona_id)}</option>`).join(''); if(!state.personaId && state.personas[0]) state.personaId=state.personas[0].persona_id; $('personaSelect').value=state.personaId; await loadPersonaDetail();}
+async function loadPersonaDetail(){const pid=selectedPersona(); if(!pid)return; state.personaId=pid; const card=state.personas.find(p=>p.persona_id===pid)||{}; $('kObs').textContent=card.observation_count||0; $('kPatch').textContent=card.patch_count||0; $('kLen').textContent=card.system_prompt_len||0; const d=await api('/personas/'+encodeURIComponent(pid)); state.persona=d.item; $('personaCard').innerHTML=`<b>${esc(pid)}</b><br>prompt ${esc((d.item.system_prompt||'').length)} chars<br><span class="mini">tools ${esc((d.item.tools||[]).length)} · skills ${esc((d.item.skills||[]).length)}</span>`; if(!$('patchBase').value) $('patchBase').value=d.item.system_prompt||'';}
+$('personaSelect').addEventListener('change',async()=>{state.personaId=selectedPersona(); resetPatchEditor(); await loadPersonaDetail(); await loadPersonaScoped();});
+async function loadPersonaScoped(){await Promise.all([loadObservations(),loadPatches(),loadSnapshots()]);}
+async function loadObservations(){const pid=selectedPersona(); const data=await api('/observations?persona_id='+encodeURIComponent(pid)+'&limit=120'); $('observationsList').innerHTML=(data.items||[]).map(o=>`<div class="item"><div class="item-title">${esc(o.source||'observation')}</div><div class="item-meta">${esc(o.timestamp_iso)} · ${esc(o.emotion||'')}</div><div>${esc(preview(o.content,220))}</div></div>`).join('')||'<div class="mutedbox">No observations</div>';}
+async function createObservation(){const pid=selectedPersona(); const body={persona_id:pid,source:$('obsSource').value,content:$('obsContent').value,interpretation:$('obsInterpretation').value,emotion:$('obsEmotion').value}; await api('/observations',{method:'POST',body:JSON.stringify(body)}); ['obsSource','obsContent','obsInterpretation','obsEmotion'].forEach(id=>$(id).value=''); toast('observation created'); await loadObservations(); await loadPersonas();}
+function parseChanges(){const raw=$('patchChanges').value.trim(); if(!raw)return []; try{return JSON.parse(raw)}catch{return [{aspect:'notes',after:raw,reason:'manual draft note'}]}}
+function resetPatchEditor(){state.selectedPatch=null; $('patchIdEditing').value=''; $('patchTrigger').value=''; $('patchChanges').value=''; $('patchBase').value=state.persona?.system_prompt||''; $('patchProposed').value=''; $('patchDetail').textContent='选择补丁查看 diff。'; $('patchDiff').textContent='diff will appear here';}
+async function createOrUpdatePatch(){const pid=selectedPersona(); const patchId=$('patchIdEditing').value.trim(); const proposed=$('patchProposed').value; const body={persona_id:pid,trigger:$('patchTrigger').value,changes:parseChanges(),base_prompt:$('patchBase').value,proposed_prompt:proposed,notes:$('patchChanges').value}; if(patchId){const data=await api('/patches/'+encodeURIComponent(patchId),{method:'PATCH',body:JSON.stringify(body)}); toast('patch draft updated'); selectPatch(data.item);} else {const data=await api('/patches',{method:'POST',body:JSON.stringify(body)}); toast('patch draft created'); await loadPatches(); await selectPatchById(data.patch_id);} await loadPatches();}
+async function loadPatches(){const pid=selectedPersona(); const data=await api('/patches?persona_id='+encodeURIComponent(pid)+'&limit=120'); $('patchesList').innerHTML=(data.items||[]).map(p=>`<div class="item" onclick="selectPatchById('${esc(p.patch_id)}')"><div class="item-title">${esc(p.patch_id)} <span class="pill status-${esc(p.status)}">${esc(p.status)}</span></div><div class="item-meta">${esc(p.timestamp_iso)} · ${esc(p.trigger||'no trigger')}</div><div>${esc(preview((p.changes||[]).map?.(x=>x.after||x.aspect||JSON.stringify(x)).join(' / ')||'',160))}</div></div>`).join('')||'<div class="mutedbox">No patches</div>';}
+async function selectPatchById(id){const data=await api('/patches/'+encodeURIComponent(id)); selectPatch(data.item)}
+function selectPatch(p){state.selectedPatch=p; $('patchIdEditing').value=p.patch_id; $('patchTrigger').value=p.trigger||''; $('patchChanges').value=JSON.stringify(p.changes||[],null,2); $('patchBase').value=p.base_prompt||''; $('patchProposed').value=p.proposed_prompt||''; $('patchDetail').innerHTML=`<b>${esc(p.patch_id)}</b> <span class="pill status-${esc(p.status)}">${esc(p.status)}</span><br>persona: ${esc(p.persona_id)}<br>approved_by: ${esc(p.approved_by||'-')}<br>applied_at: ${esc(p.applied_at||'-')}`; $('patchDiff').textContent=p.diff||'(empty diff)';}
+async function approveSelectedPatch(){if(!state.selectedPatch)return toast('select a patch first'); await api('/patches/'+encodeURIComponent(state.selectedPatch.patch_id)+'/approve',{method:'POST',body:JSON.stringify({approved_by:'frontend-human'})}); toast('patch approved'); await loadPatches(); await selectPatchById(state.selectedPatch.patch_id);}
+async function applySelectedPatch(){if(!state.selectedPatch)return toast('select a patch first'); if(!confirm(`Apply approved patch ${state.selectedPatch.patch_id} to persona ${state.selectedPatch.persona_id}?`))return; await api('/patches/'+encodeURIComponent(state.selectedPatch.patch_id)+'/apply',{method:'POST',body:JSON.stringify({})}); toast('patch applied'); await loadPatches(); await loadPersonas(); await selectPatchById(state.selectedPatch.patch_id);}
+async function approveAndApplySelectedPatch(){if(!state.selectedPatch)return toast('select a patch first'); if(!confirm(`Approve AND apply patch ${state.selectedPatch.patch_id} to persona ${state.selectedPatch.persona_id}? This still performs base prompt safety check.`))return; await api('/patches/'+encodeURIComponent(state.selectedPatch.patch_id)+'/apply',{method:'POST',body:JSON.stringify({auto_approve:true,approved_by:'frontend-human-direct'})}); toast('patch approved and applied'); await loadPatches(); await loadPersonas(); await selectPatchById(state.selectedPatch.patch_id);}
+async function loadSnapshots(){const pid=selectedPersona(); const data=await api('/snapshots?persona_id='+encodeURIComponent(pid)+'&limit=80'); $('snapshotsList').innerHTML=(data.items||[]).map(s=>`<div class="item" onclick="viewSnapshot('${esc(s.snapshot_id)}')"><div class="item-title">${esc(s.label||s.snapshot_id)}</div><div class="item-meta">${esc(s.timestamp_iso)} · ${esc(s.source)} · ${esc(s.content_len)} chars</div></div>`).join('')||'<div class="mutedbox">No snapshots</div>';}
+async function createCurrentSnapshot(){const pid=selectedPersona(); const data=await api('/snapshots',{method:'POST',body:JSON.stringify({persona_id:pid,label:`Manual current snapshot for ${pid}`})}); toast('snapshot created: '+data.snapshot_id); await loadSnapshots();}
+async function viewSnapshot(id){const data=await api('/snapshots/'+encodeURIComponent(id)); $('snapshotContent').textContent=data.item.content||'';}
+async function loadTemplates(){const data=await api('/templates'); $('templatesList').innerHTML=(data.items||[]).map(t=>`<div class="item" onclick="viewTemplate('${esc(t.template_id)}')"><div class="item-title">${esc(t.name||t.template_id)}</div><div class="item-meta">${esc(t.template_id)} · ${esc(t.metadata?.kind||'template')} · ${esc((t.content||'').length)} chars</div><div>${esc(t.description||'')}</div></div>`).join('')||'<div class="mutedbox">No templates</div>';}
+async function viewTemplate(id){if(!confirm('Reveal template/module content? It may contain sensitive prompt material.'))return; const data=await api('/templates/'+encodeURIComponent(id)); $('templateContent').textContent=data.item.content||'';}
+async function loadCaptures(){const sess=$('sessionFilter').value.trim(); const data=await api('/captures?limit=80'+(sess?'&session_id='+encodeURIComponent(sess):'')); $('capturesList').innerHTML=(data.items||[]).map(c=>`<div class="item" onclick="viewCapture(${c.id})"><div class="item-title">#${c.id} ${esc(c.persona_id||'')}</div><div class="item-meta">${esc(c.timestamp_iso)} · ${esc(c.session_id||'')}</div><div>${esc(preview(c.prompt,150))}</div></div>`).join('')||'<div class="mutedbox">No captures</div>'; const s=await api('/sessions'); $('sessions').innerHTML=(s.items||[]).map(x=>`<option value="${esc(x.session_id)}">${esc(x.count)} · ${esc(x.last_timestamp_iso)}</option>`).join('');}
+async function viewCapture(id){const data=await api('/captures/'+id); $('captureDetail').textContent=JSON.stringify(data.item,null,2);}
+reloadAll().catch(e=>toast(e.message));
 </script>
 </body>
 </html>

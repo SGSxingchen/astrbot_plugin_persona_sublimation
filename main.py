@@ -31,7 +31,7 @@ PRUNE_MAX_SECONDS = 0.75
     PLUGIN_NAME,
     "SGSxingchen",
     "人格升华：捕获实际发往 LLM 的 ProviderRequest 快照（第一阶段只读 Hook）。",
-    "0.1.0",
+    "0.3.0",
     "",
 )
 class PersonaSublimationPlugin(Star):
@@ -77,6 +77,36 @@ class PersonaSublimationPlugin(Star):
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
+
+    @web.middleware
+    async def _http_middleware(
+        self, request: web.Request, handler: Any
+    ) -> web.StreamResponse:
+        if request.method == "OPTIONS":
+            response = web.Response(status=204)
+        else:
+            try:
+                response = await handler(request)
+            except web.HTTPException as exc:
+                response = web.json_response(
+                    {"ok": False, "error": exc.reason or "HTTP error"},
+                    status=exc.status,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "PersonaSublimation API error at %s %s: %s",
+                    request.method,
+                    request.path,
+                    exc,
+                    exc_info=True,
+                )
+                response = web.json_response(
+                    {"ok": False, "error": "internal server error"}, status=500
+                )
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        return response
 
     def _init_db(self) -> None:
         with self._lock, self._connect() as conn:
@@ -398,6 +428,36 @@ class PersonaSublimationPlugin(Star):
         except (TypeError, json.JSONDecodeError):
             return default
 
+    async def _read_json(self, request: web.Request) -> dict[str, Any]:
+        if not request.can_read_body:
+            return {}
+        try:
+            data = await request.json()
+        except json.JSONDecodeError as exc:
+            raise web.HTTPBadRequest(reason="invalid JSON body") from exc
+        if not isinstance(data, dict):
+            raise web.HTTPBadRequest(reason="JSON body must be an object")
+        return data
+
+    def _explicit_true(self, data: dict[str, Any], *keys: str) -> bool:
+        """Return True only when one of the named JSON fields is explicitly true."""
+        for key in keys:
+            if key not in data:
+                continue
+            value = data[key]
+            if value is True:
+                return True
+            if isinstance(value, str) and value.strip().lower() in {
+                "true",
+                "1",
+                "yes",
+                "on",
+            }:
+                return True
+            if isinstance(value, int | float) and value == 1:
+                return True
+        return False
+
     def _sha256_text(self, value: str) -> str:
         return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
@@ -414,6 +474,19 @@ class PersonaSublimationPlugin(Star):
         if not include_content:
             item.pop("content", None)
         return item
+
+    def _make_prompt_diff(
+        self, persona_id: str, base_prompt: str, proposed_prompt: str
+    ) -> str:
+        return "\n".join(
+            difflib.unified_diff(
+                str(base_prompt).splitlines(),
+                str(proposed_prompt).splitlines(),
+                fromfile=f"{persona_id}:current",
+                tofile=f"{persona_id}:proposed",
+                lineterm="",
+            )
+        )
 
     def _insert_snapshot_record(
         self,
@@ -562,7 +635,7 @@ class PersonaSublimationPlugin(Star):
             self._server_task = None
 
     async def _start_http_server(self) -> None:
-        app = web.Application()
+        app = web.Application(middlewares=[self._http_middleware])
         app.router.add_get("/", self.serve_index)
         app.router.add_get("/api/captures", self.api_list_captures)
         app.router.add_get(r"/api/captures/{capture_id:\d+}", self.api_get_capture)
@@ -573,16 +646,21 @@ class PersonaSublimationPlugin(Star):
         app.router.add_post("/api/observations", self.api_create_observation)
         app.router.add_get("/api/patches", self.api_list_patches)
         app.router.add_post("/api/patches", self.api_create_patch)
+        app.router.add_get("/api/patches/{patch_id}", self.api_get_patch)
+        app.router.add_post("/api/patches/{patch_id}", self.api_update_patch)
+        app.router.add_patch("/api/patches/{patch_id}", self.api_update_patch)
         app.router.add_post("/api/patches/{patch_id}/approve", self.api_approve_patch)
         app.router.add_post("/api/patches/{patch_id}/apply", self.api_apply_patch)
         app.router.add_post("/api/migrate-skill", self.api_migrate_skill_files)
         app.router.add_get("/api/templates", self.api_list_templates)
         app.router.add_post("/api/templates", self.api_create_template)
+        app.router.add_get("/api/templates/{template_id}", self.api_get_template)
         app.router.add_get("/api/snapshots", self.api_list_snapshots)
         app.router.add_post("/api/snapshots", self.api_create_snapshot)
         app.router.add_get("/api/snapshots/{snapshot_id}", self.api_get_snapshot)
         app.router.add_get("/api/profiles", self.api_list_profiles)
         app.router.add_post("/api/profiles/{persona_id}", self.api_upsert_profile)
+        app.router.add_route("OPTIONS", "/{tail:.*}", self.api_options)
 
         runner = web.AppRunner(app)
         try:
@@ -635,6 +713,9 @@ class PersonaSublimationPlugin(Star):
             content_type="text/html",
             charset="utf-8",
         )
+
+    async def api_options(self, _request: web.Request) -> web.Response:
+        return web.Response(status=204)
 
     async def api_list_captures(self, req: web.Request) -> web.Response:
         session_id = str(req.query.get("session_id", "")).strip()
@@ -780,7 +861,7 @@ class PersonaSublimationPlugin(Star):
         return web.json_response({"ok": True, "items": items})
 
     async def api_create_observation(self, request: web.Request) -> web.Response:
-        data = await request.json()
+        data = await self._read_json(request)
         persona_id = str(data.get("persona_id", "")).strip()
         content = str(data.get("content", "")).strip()
         if not persona_id or not content:
@@ -833,7 +914,7 @@ class PersonaSublimationPlugin(Star):
         return item
 
     async def api_create_patch(self, request: web.Request) -> web.Response:
-        data = await request.json()
+        data = await self._read_json(request)
         persona_id = str(data.get("persona_id", "")).strip()
         proposed_prompt = data.get("proposed_prompt")
         if not persona_id:
@@ -850,15 +931,19 @@ class PersonaSublimationPlugin(Star):
         if proposed_prompt is None:
             proposed_prompt = base_prompt
         patch_id = str(data.get("patch_id") or self._next_patch_id(persona_id))
-        diff = "\n".join(
-            difflib.unified_diff(
-                str(base_prompt).splitlines(),
-                str(proposed_prompt).splitlines(),
-                fromfile=f"{persona_id}:current",
-                tofile=f"{persona_id}:proposed",
-                lineterm="",
-            )
+        diff = self._make_prompt_diff(
+            persona_id, str(base_prompt), str(proposed_prompt)
         )
+        metadata = data.get("metadata", {}) or {}
+        if not isinstance(metadata, dict):
+            metadata = {"raw_metadata": metadata}
+        notes = str(data.get("notes", "") or "").strip()
+        if notes:
+            metadata["notes"] = notes
+        mode = (
+            "prompt" if data.get("proposed_prompt") is not None else "structured-draft"
+        )
+        metadata.setdefault("mode", mode)
         ts, iso = self._now()
         with self._lock, self._connect() as conn:
             conn.execute(
@@ -880,11 +965,90 @@ class PersonaSublimationPlugin(Star):
                     str(base_prompt),
                     diff,
                     data.get("approved_by"),
-                    self._json(data.get("metadata", {}) or {}),
+                    self._json(metadata),
                 ),
             )
             conn.commit()
         return web.json_response({"ok": True, "patch_id": patch_id, "diff": diff})
+
+    async def api_get_patch(self, request: web.Request) -> web.Response:
+        patch_id = request.match_info.get("patch_id", "").strip()
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM persona_patches WHERE patch_id = ?", (patch_id,)
+            ).fetchone()
+        if not row:
+            return web.json_response({"ok": False, "error": "补丁不存在"}, status=404)
+        return web.json_response({"ok": True, "item": self._patch_row_to_item(row)})
+
+    async def api_update_patch(self, request: web.Request) -> web.Response:
+        patch_id = request.match_info.get("patch_id", "").strip()
+        data = await self._read_json(request)
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM persona_patches WHERE patch_id = ?", (patch_id,)
+            ).fetchone()
+            if not row:
+                return web.json_response(
+                    {"ok": False, "error": "补丁不存在"}, status=404
+                )
+            item = self._patch_row_to_item(row)
+            if item["status"] != "pending":
+                return web.json_response(
+                    {"ok": False, "error": "只能修改 pending 状态的补丁草案"},
+                    status=400,
+                )
+
+            trigger = (
+                str(data["trigger"])
+                if "trigger" in data
+                else str(item.get("trigger", "") or "")
+            )
+            changes = data.get("changes", item.get("changes") or [])
+            core_preserved = data.get(
+                "core_preserved", item.get("core_preserved") or []
+            )
+            base_prompt = str(data.get("base_prompt", item.get("base_prompt") or ""))
+            proposed_prompt = str(
+                data.get("proposed_prompt", item.get("proposed_prompt") or "")
+            )
+            metadata = (
+                item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+            )
+            incoming_metadata = data.get("metadata")
+            if isinstance(incoming_metadata, dict):
+                metadata.update(incoming_metadata)
+            notes = str(data.get("notes", "") or "").strip()
+            if notes:
+                metadata["notes"] = notes
+            diff = self._make_prompt_diff(
+                str(item["persona_id"]), base_prompt, proposed_prompt
+            )
+            conn.execute(
+                """
+                UPDATE persona_patches
+                SET trigger = ?, changes_json = ?, core_preserved_json = ?,
+                    proposed_prompt = ?, base_prompt = ?, diff = ?, metadata_json = ?
+                WHERE patch_id = ? AND status = 'pending'
+                """,
+                (
+                    trigger,
+                    self._json(changes or []),
+                    self._json(core_preserved or []),
+                    proposed_prompt,
+                    base_prompt,
+                    diff,
+                    self._json(metadata),
+                    patch_id,
+                ),
+            )
+            conn.commit()
+            updated = conn.execute(
+                "SELECT * FROM persona_patches WHERE patch_id = ?", (patch_id,)
+            ).fetchone()
+        return web.json_response(
+            {"ok": True, "item": self._patch_row_to_item(updated), "diff": diff}
+        )
 
     def _next_patch_id(self, persona_id: str) -> str:
         prefix = "P" + "".join(ch for ch in persona_id if ch.isalnum())[:8]
@@ -897,7 +1061,7 @@ class PersonaSublimationPlugin(Star):
 
     async def api_approve_patch(self, request: web.Request) -> web.Response:
         patch_id = request.match_info.get("patch_id", "").strip()
-        data = await request.json() if request.can_read_body else {}
+        data = await self._read_json(request)
         with self._lock, self._connect() as conn:
             cur = conn.execute(
                 "UPDATE persona_patches SET status = 'approved', approved_by = ? WHERE patch_id = ? AND status = 'pending'",
@@ -912,6 +1076,9 @@ class PersonaSublimationPlugin(Star):
 
     async def api_apply_patch(self, request: web.Request) -> web.Response:
         patch_id = request.match_info.get("patch_id", "").strip()
+        data = await self._read_json(request)
+        auto_approve = self._explicit_true(data, "auto_approve", "approve")
+        approved_by = str(data.get("approved_by", "") or "frontend-human")
         with self._lock, self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM persona_patches WHERE patch_id = ?", (patch_id,)
@@ -919,9 +1086,16 @@ class PersonaSublimationPlugin(Star):
         if not row:
             return web.json_response({"ok": False, "error": "补丁不存在"}, status=404)
         item = self._patch_row_to_item(row)
-        if item["status"] != "approved":
+        if item["status"] == "pending" and auto_approve:
+            item["status"] = "approved"
+            item["approved_by"] = approved_by
+        elif item["status"] != "approved":
             return web.json_response(
-                {"ok": False, "error": "补丁必须先 approve"}, status=400
+                {
+                    "ok": False,
+                    "error": "补丁必须先 approve，或在 apply 请求中显式传 auto_approve=true",
+                },
+                status=400,
             )
         proposed = item.get("proposed_prompt")
         if not proposed:
@@ -949,14 +1123,27 @@ class PersonaSublimationPlugin(Star):
         _, iso = self._now()
         with self._lock, self._connect() as conn:
             conn.execute(
-                "UPDATE persona_patches SET status = 'applied', applied_at = ? WHERE patch_id = ?",
-                (iso, patch_id),
+                """
+                UPDATE persona_patches
+                SET status = 'applied',
+                    approved_by = COALESCE(NULLIF(approved_by, ''), ?),
+                    applied_at = ?
+                WHERE patch_id = ?
+                """,
+                (approved_by, iso, patch_id),
             )
             conn.commit()
-        return web.json_response({"ok": True, "applied_at": iso})
+        return web.json_response(
+            {
+                "ok": True,
+                "applied_at": iso,
+                "auto_approved": auto_approve and row["status"] == "pending",
+                "approved_by": approved_by,
+            }
+        )
 
     async def api_migrate_skill_files(self, request: web.Request) -> web.Response:
-        data = await request.json() if request.can_read_body else {}
+        data = await self._read_json(request)
         skill_dir = Path(
             str(data.get("skill_dir") or "/root/AstrBot/data/skills/persona-evolution")
         )
@@ -1165,7 +1352,7 @@ class PersonaSublimationPlugin(Star):
         )
 
     async def api_create_snapshot(self, request: web.Request) -> web.Response:
-        data = await request.json()
+        data = await self._read_json(request)
         persona_id = str(data.get("persona_id", "")).strip()
         if not persona_id:
             return web.json_response(
@@ -1213,8 +1400,24 @@ class PersonaSublimationPlugin(Star):
             items.append(item)
         return web.json_response({"ok": True, "items": items})
 
+    async def api_get_template(self, request: web.Request) -> web.Response:
+        template_id = request.match_info.get("template_id", "").strip()
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM persona_templates WHERE template_id = ?",
+                (template_id,),
+            ).fetchone()
+        if not row:
+            return web.json_response(
+                {"ok": False, "error": "模板/模块不存在"}, status=404
+            )
+        item = dict(row)
+        for key in ("variables_json", "metadata_json"):
+            item[key.removesuffix("_json")] = self._loads(item.pop(key), None)
+        return web.json_response({"ok": True, "item": item})
+
     async def api_create_template(self, request: web.Request) -> web.Response:
-        data = await request.json()
+        data = await self._read_json(request)
         template_id = (
             str(data.get("template_id", "")).strip() or self._next_template_id()
         )
@@ -1285,7 +1488,7 @@ class PersonaSublimationPlugin(Star):
 
     async def api_upsert_profile(self, request: web.Request) -> web.Response:
         persona_id = request.match_info.get("persona_id", "").strip()
-        data = await request.json()
+        data = await self._read_json(request)
         if not persona_id:
             return web.json_response(
                 {"ok": False, "error": "persona_id 必填"}, status=400

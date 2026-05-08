@@ -8,6 +8,7 @@
 
 - 捕获 AstrBot 发往 LLM 的 `ProviderRequest` 快照
 - 独立 Web 页面查看 prompts、system prompts、contexts、tools、媒体 URL 等信息
+- 单文件前端操作台：选择 persona、记录 observation、编辑 patch 草案、查看 diff、approve/apply、创建快照、查看模板模块
 - 支持按 `session_id` 查看历史请求
 - 支持多 persona 的观察记录、补丁、profile 计数与隔离
 - 支持通用人格模板和模块资产
@@ -26,6 +27,19 @@ http://127.0.0.1:7833/
 ```
 
 默认只监听本机。页面不依赖 AstrBot Dashboard，也不走 Dashboard 鉴权。
+
+## 前端操作台
+
+`GET /` 提供纯静态 HTML/JS/CSS 的人类操作台，无构建链。页面包含：
+
+- Persona 选择与状态卡片：按 `persona_id` 切换上下文，显示 observation/patch 计数和 prompt 长度
+- Observations：查看当前 persona 的观察记录，手动新增 observation
+- Patches：创建结构化草案或直接编辑 `proposed_prompt`，展示 diff，人工 approve，二次确认后 apply；也支持人类显式点击 “Approve & Apply” 直接审批并应用
+- Snapshots：列出当前 persona 的快照/基线，一键从当前 AstrBot persona 创建 snapshot
+- Templates / Modules：查看已迁移的模板/模块列表；敏感内容不会默认展开，需要点击并确认
+- Captures：保留 LLM 请求捕获列表和详情
+
+切换 persona 后，observations、patches、snapshots 会按 `persona_id` 重新加载。页面不会自动应用任何补丁。
 
 ## 安全警告
 
@@ -76,8 +90,15 @@ bind_host = 127.0.0.1
 
 - `GET /api/patches?persona_id=&limit=`：补丁列表
 - `POST /api/patches`：创建补丁，默认 `pending`
+- `GET /api/patches/<patch_id>`：查看单个补丁和 diff
+- `PATCH /api/patches/<patch_id>` 或 `POST /api/patches/<patch_id>`：更新 pending 补丁草案，可改 trigger、changes、base_prompt、proposed_prompt
 - `POST /api/patches/<patch_id>/approve`：审批补丁
 - `POST /api/patches/<patch_id>/apply`：应用补丁
+
+`POST /api/patches` 支持两种模式：
+
+1. 直接传 `proposed_prompt`：立即生成基于 `base_prompt` 的 diff
+2. 只传 `changes` / `notes`：保存结构化 pending 草案，前端或人类后续再编辑 `proposed_prompt`
 
 应用补丁要求：
 
@@ -85,9 +106,30 @@ bind_host = 127.0.0.1
 2. 只更新补丁所属的 `persona_id`
 3. 当前 persona 的 prompt 必须与补丁的 `base_prompt` 匹配，避免误覆盖
 
+`POST /api/patches/<patch_id>/apply` 也支持显式直接审批 pending 补丁：
+
+```json
+{
+  "auto_approve": true,
+  "approved_by": "frontend-human"
+}
+```
+
+也可以使用等价字段：
+
+```json
+{
+  "approve": true,
+  "approved_by": "frontend-human"
+}
+```
+
+只有当请求体里显式传入 `auto_approve=true` 或 `approve=true` 时，pending 补丁才允许在 apply 内先审批再应用；普通 `POST /apply` 仍要求补丁已经是 `approved`。这只表示 HTTP API 的人类操作者在同一次点击中审批并应用；不是后台自动审批。前端按钮会二次确认，后端仍执行 base prompt 检查，只写补丁所属 `persona_id`，并记录 `approved_by` / `applied_at` / `status=applied`。
+
 ### Templates / Modules
 
 - `GET /api/templates`：模板/模块资产列表
+- `GET /api/templates/<template_id>`：查看单个模板/模块正文
 - `POST /api/templates`：创建或更新模板/模块
 
 可用于保存通用人格模板、模块片段、NSFW 模块、RolePlay 模块、运维备注模块等。
