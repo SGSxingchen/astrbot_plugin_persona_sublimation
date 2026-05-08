@@ -2,13 +2,14 @@
 
 人格升华是一个 AstrBot 插件，用于捕获实际发往 LLM 的请求快照，并在插件内部提供人格观察、补丁审批、快照基线、模板模块与多人格 profile 管理能力。
 
-它不是 AstrBot 原生 persona 系统的替代品，而是包在原生 persona 外面的一层「观察 / 归档 / 审批 / 应用」管理插件。真正修改人格时仍调用 AstrBot 的 `persona_manager.update_persona`。
+它不是 AstrBot 原生 persona 系统的替代品，而是包在原生 persona 外面的一层「观察 / 归档 / 审批 / 应用」工作流插件。真正修改人格时仍调用 AstrBot 的 `persona_manager.update_persona`。
 
 ## 功能特性
 
 - 捕获 AstrBot 发往 LLM 的 `ProviderRequest` 快照
 - 独立 Web 页面查看 prompts、system prompts、contexts、tools、媒体 URL 等信息
-- 中文 Web 管理台：按 persona 隔离管理 observation、patch、snapshot、template/module、profile，支持基础 CRUD 和人工应用流
+- 中文 Web 工作台：按 persona 隔离维护 observation、patch、snapshot、template/module、profile，支持完整的人类审核工作流和资料维护
+- 安全 LLM Tools：允许模型参与观察、查询、起草 pending 调整和留存快照，但不能直接应用人格调整
 - 支持按 `session_id` 查看历史请求
 - 支持多 persona 的观察记录、补丁、profile 计数与隔离
 - 支持通用人格模板和模块资产
@@ -28,19 +29,22 @@ http://127.0.0.1:7833/
 
 默认只监听本机。页面不依赖 AstrBot Dashboard，也不走 Dashboard 鉴权。
 
-## 前端操作台
+## 前端人格工作台
 
-`GET /` 提供纯静态 HTML/JS/CSS 的人类操作台，无构建链。页面包含：
+`GET /` 提供纯静态 HTML/JS/CSS 的人类工作台，无构建链。页面包含：
 
 - Persona 选择与状态卡片：按 `persona_id` 切换上下文，显示 observation/patch 计数和 prompt 长度
-- Observations：当前 persona 的观察记录列表，支持新增 / 查看 / 编辑 / 删除 / 保存
-- Patches：创建结构化草案或直接编辑 `proposed_prompt`，支持查看 diff、编辑 pending、删除 pending、审批、二次确认后应用；也支持人类显式点击“直接审批并应用”
-- Snapshots：列出当前 persona 的快照/基线，支持创建当前人格快照、查看、编辑标签/说明、删除，并可从快照生成 pending 补丁草案
-- Templates / Modules：支持新增 / 查看 / 编辑 / 删除 / 保存模板与模块；敏感内容不会默认展开，需要点击并确认；可从模板生成 pending 补丁草案
-- Profiles：维护当前 persona 的显示名、原型、备注和模板关联，支持保存与清空
+- Observations：记录一条观察、查看上下文、保存记录或移除无效记录
+- Patches：起草人格调整、保存 pending 草案、查看 diff、放弃草案、审批并二次确认后应用；也支持人类显式点击“直接审批并应用”
+- Snapshots：留存当前版本、查看版本内容、修改备注、移除快照，并可由此起草 pending 调整
+- Templates / Modules：收纳模板与模块、确认后查看敏感内容、更新内容、移除模块，并可由此起草 pending 调整
+- Module Links：把模块关联到当前 persona，调整顺序、启用/停用、解除关联，并可由当前模块清单起草 pending 调整
+- Profiles：维护当前 persona 的显示名、原型、备注和模板关联，支持保存资料与清空资料
 - Captures：保留 LLM 请求捕获列表和详情查看
 
 切换 persona 后，observations、patches、snapshots、profile 会按 `persona_id` 重新加载。页面不会自动应用任何补丁。快照和模板不会直接写入 AstrBot persona；它们只能先生成 pending patch，再由人类审批/应用。
+
+“模块关联”是独立的装配清单：它只记录某个 persona 关联了哪些模板/模块资产、顺序、角色、启用状态和备注，不会直接修改 AstrBot 原版 persona。要把模块清单真正写入 persona，需要点击“由模块清单起草调整”，生成 pending patch 后再审批/应用。
 
 ## 安全警告
 
@@ -65,10 +69,15 @@ bind_host = 127.0.0.1
 - `GET /api/captures/<id>`：请求快照详情
 - `GET /api/sessions`：有捕获记录的 session 列表
 
-### Persona 管理视图
+### Persona 视图
 
 - `GET /api/personas`：AstrBot 当前 persona 列表，并展示 observation/patch 计数
 - `GET /api/personas/<persona_id>`：指定 persona 详情
+- `GET /api/personas/<persona_id>/modules`：列出当前 persona 的模块关联清单，带模块摘要
+- `POST /api/personas/<persona_id>/modules`：关联模块，body 包含 `template_id`、`role`、`enabled`、`order_index`、`notes`
+- `PATCH /api/personas/<persona_id>/modules/<link_id>`：调整模块关联的角色、启用状态、顺序、备注
+- `DELETE /api/personas/<persona_id>/modules/<link_id>`：解除关联，不删除模块本体
+- `POST /api/personas/<persona_id>/modules/patch`：由当前启用模块清单组合生成 pending patch，不直接应用
 
 ### Observations
 
@@ -76,7 +85,7 @@ bind_host = 127.0.0.1
 - `POST /api/observations`：创建观察记录
 - `GET /api/observations/<id>`：查看单条观察记录
 - `PATCH/POST /api/observations/<id>`：更新单条观察记录；可带 `persona_id` 做匹配校验
-- `DELETE /api/observations/<id>?persona_id=`：删除单条观察记录；可带 `persona_id` 做匹配校验
+- `DELETE /api/observations/<id>?persona_id=`：移除单条观察记录；可带 `persona_id` 做匹配校验
 
 示例：
 
@@ -96,14 +105,14 @@ bind_host = 127.0.0.1
 - `POST /api/patches`：创建补丁，默认 `pending`
 - `GET /api/patches/<patch_id>`：查看单个补丁和 diff
 - `PATCH /api/patches/<patch_id>` 或 `POST /api/patches/<patch_id>`：更新 pending 补丁草案，可改 trigger、changes、base_prompt、proposed_prompt
-- `DELETE /api/patches/<patch_id>`：删除 pending 补丁。非 pending（已审批/已应用）不会被删除
+- `DELETE /api/patches/<patch_id>`：移除 pending 补丁。非 pending（已审批/已应用）不会被移除
 - `POST /api/patches/<patch_id>/approve`：审批补丁
 - `POST /api/patches/<patch_id>/apply`：应用补丁
 
 `POST /api/patches` 支持两种模式：
 
 1. 直接传 `proposed_prompt`：立即生成基于 `base_prompt` 的 diff
-2. 只传 `changes` / `notes`：保存结构化 pending 草案，前端或人类后续再编辑 `proposed_prompt`
+2. 只传 `changes` / `notes`：保存结构化 pending 草案，前端或人类后续再调整 `proposed_prompt`
 
 应用补丁要求：
 
@@ -137,10 +146,12 @@ bind_host = 127.0.0.1
 - `GET /api/templates/<template_id>`：查看单个模板/模块正文
 - `POST /api/templates`：创建或更新模板/模块
 - `PATCH/POST /api/templates/<template_id>`：更新模板/模块说明、正文、变量和 metadata；从 skill-migration 迁来的模块也允许更新
-- `DELETE /api/templates/<template_id>`：删除模板/模块
+- `DELETE /api/templates/<template_id>`：移除模板/模块
 - `POST /api/templates/<template_id>/patch`：从模板/模块正文生成 pending 补丁草案，不直接应用到 persona
 
 可用于保存通用人格模板、模块片段、NSFW 模块、RolePlay 模块、运维备注模块等。
+
+历史 HTTP 接口仍沿用 `/api/templates` 命名以保持兼容；前端统一显示为“模块”，准确含义是“模板/模块资产”。
 
 ### Snapshots / Baselines
 
@@ -148,7 +159,7 @@ bind_host = 127.0.0.1
 - `GET /api/snapshots/<snapshot_id>`：查看单个快照正文
 - `POST /api/snapshots`：创建快照
 - `PATCH/POST /api/snapshots/<snapshot_id>`：更新快照标签和 metadata，不改原版 persona
-- `DELETE /api/snapshots/<snapshot_id>?persona_id=`：删除插件快照，不影响原版 persona
+- `DELETE /api/snapshots/<snapshot_id>?persona_id=`：移除插件快照，不影响原版 persona
 - `POST /api/snapshots/<snapshot_id>/patch`：从快照正文生成 pending 补丁草案，不直接应用到 persona
 
 `POST /api/snapshots` 不传 `content` 时，会从当前 AstrBot persona 读取 `system_prompt` 创建快照，不会修改 persona。
@@ -159,7 +170,7 @@ bind_host = 127.0.0.1
 - `GET /api/profiles/<persona_id>`：查看某 persona 的 profile；不存在时返回空 profile
 - `POST /api/profiles/<persona_id>`：更新某个人格的 display_name、archetype、notes、template 关联
 - `PATCH /api/profiles/<persona_id>`：同上，更新 profile
-- `DELETE /api/profiles/<persona_id>`：清空插件内 profile，不删除原版 persona
+- `DELETE /api/profiles/<persona_id>`：清空插件内 profile，不移除原版 persona
 
 ### 旧 SKILL 迁移
 
@@ -193,11 +204,11 @@ data/plugin_data/astrbot_plugin_persona_sublimation/captures.sqlite3
 - snapshots/baselines prompt 快照
 - profiles 人格补充资料
 
-如果库异常或过大，可以在停用/停止插件后删除 `captures.sqlite3`。删除后只会丢失本插件保存的历史快照和归档数据，不会删除 AstrBot 原版 persona、长期记忆或核心配置。
+如果库异常或过大，可以在停用/停止插件后移除 `captures.sqlite3`。移除后只会丢失本插件保存的历史快照和归档数据，不会移除 AstrBot 原版 persona、长期记忆或核心配置。
 
 ## 容量控制与自 DoS 修复
 
-插件会按 `max_records` 保留捕获记录。数据库超过 50 MiB 时，会按有限批次删除最早记录，并在循环外受限执行 `VACUUM`。
+插件会按 `max_records` 保留捕获记录。数据库超过 50 MiB 时，会按有限批次移除最早记录，并在循环外受限执行 `VACUUM`。
 
 清理逻辑不会再依赖「SQLite DELETE 后主库文件大小立刻下降」作为退出条件，避免捕获库过大时陷入无限循环导致 AstrBot 主事件循环卡死。
 
@@ -226,17 +237,43 @@ self.context.persona_manager.update_persona(
 )
 ```
 
-## 聊天指令与 LLM 工具
+## 聊天指令与 LLM Tools
 
-当前版本不暴露聊天指令，也不暴露 LLM Tool。
+当前版本不暴露聊天指令，但会暴露一组受限 LLM Tools，用于延续旧 SKILLS 模式里的“观察 / 起草 / 查询 / 留存”工作流。
 
-代码中只注册了：
+安全边界：
+
+- LLM Tools 可以记录 observation、查看摘要、起草 pending patch、留存当前快照。
+- LLM Tools 默认不返回完整 `system_prompt`、补丁正文或敏感模板正文；只有个别查看工具在显式 `include_content=true` 时才会返回更多内容，且敏感模板仍会隐藏。
+- LLM Tools 不提供 apply 能力，不能审批或应用补丁；真正写入 persona 的入口仍在前端人格工作台，由人类点击“审批 / 应用 / 直接审批并应用”触发。
+- 所有会写入插件数据的工具都要求明确 `persona_id`，不会默认写到某个固定人格。
+
+当前工具：
+
+- `persona_sublimation_list_personas()`：列出 persona 摘要、prompt 长度、观察/补丁/快照计数。
+- `persona_sublimation_add_observation(persona_id, content, source='', interpretation='', emotion='')`：记录一条观察。
+- `persona_sublimation_list_observations(persona_id, limit=10)`：列观察摘要。
+- `persona_sublimation_create_patch_draft(persona_id, trigger, proposed_prompt='', changes=[], notes='', base_prompt='')`：起草 pending 调整，不审批不应用。
+- `persona_sublimation_list_patches(persona_id, status='', limit=10)`：列调整摘要。
+- `persona_sublimation_get_patch(patch_id, include_content=false)`：查看调整；默认不返回完整 base/proposed prompt。
+- `persona_sublimation_create_snapshot(persona_id, label='', description='')`：留存当前人格快照，不修改 persona。
+- `persona_sublimation_list_snapshots(persona_id, limit=10)`：列快照摘要。
+- `persona_sublimation_list_templates(limit=20)`：列模板/模块摘要，不展开正文。
+- `persona_sublimation_get_template(template_id, include_content=false)`：查看模板/模块；默认不展开正文，敏感模块仍隐藏。
+- `persona_sublimation_list_persona_modules(persona_id)`：列当前 persona 的模块关联清单。
+- `persona_sublimation_link_module(persona_id, template_id, role='', enabled=true, order_index=0, notes='')`：把模块关联到 persona；只记录关系，不修改 persona。
+- `persona_sublimation_unlink_module(persona_id, link_id)`：解除模块关联，不删除模块本体。
+- `persona_sublimation_create_patch_from_modules(persona_id, notes='')`：由当前启用模块清单起草 pending 调整。
+- `persona_sublimation_generate_patch_from_snapshot(persona_id, snapshot_id, trigger='')`：由快照起草 pending 调整。
+- `persona_sublimation_generate_patch_from_template(persona_id, template_id, trigger='')`：由模板/模块起草 pending 调整。
+
+代码中仍保留只读捕获 hook：
 
 ```python
 @filter.on_llm_request(priority=-100)
 ```
 
-用于只读捕获 LLM 请求快照。普通聊天不会新增 slash/text 指令，也不会给模型额外工具调用入口。
+用于只读捕获 LLM 请求快照。普通聊天不会新增 slash/text 指令。
 
 ## 从旧 persona-evolution SKILL 迁移
 

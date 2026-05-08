@@ -31,7 +31,7 @@ PRUNE_MAX_SECONDS = 0.75
     PLUGIN_NAME,
     "SGSxingchen",
     "人格升华：捕获实际发往 LLM 的 ProviderRequest 快照（第一阶段只读 Hook）。",
-    "0.4.0",
+    "0.5.0",
     "",
 )
 class PersonaSublimationPlugin(Star):
@@ -258,6 +258,27 @@ class PersonaSublimationPlugin(Star):
                 "CREATE INDEX IF NOT EXISTS idx_ps_snapshot_persona_time "
                 "ON persona_snapshots(persona_id, timestamp DESC)"
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS persona_module_links (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    persona_id TEXT NOT NULL,
+                    template_id TEXT NOT NULL,
+                    role TEXT NOT NULL DEFAULT '',
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    order_index INTEGER NOT NULL DEFAULT 0,
+                    notes TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    UNIQUE(persona_id, template_id)
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ps_module_link_persona_order "
+                "ON persona_module_links(persona_id, enabled DESC, order_index ASC, id ASC)"
+            )
             conn.commit()
 
     def _ensure_column(
@@ -477,6 +498,179 @@ class PersonaSublimationPlugin(Star):
             item.pop("content", None)
         return item
 
+    def _clip_text(self, value: Any, limit: int = 240) -> str:
+        text = str(value or "").replace("\r\n", "\n").strip()
+        return text if len(text) <= limit else text[:limit] + "…"
+
+    def _patch_safe_summary(
+        self, item: dict[str, Any], include_content: bool = False
+    ) -> dict[str, Any]:
+        diff = str(item.get("diff") or "")
+        summary = {
+            "patch_id": item.get("patch_id"),
+            "persona_id": item.get("persona_id"),
+            "status": item.get("status"),
+            "trigger": item.get("trigger") or "",
+            "timestamp_iso": item.get("timestamp_iso"),
+            "approved_by": item.get("approved_by"),
+            "applied_at": item.get("applied_at"),
+            "changes": item.get("changes") or [],
+            "core_preserved": item.get("core_preserved") or [],
+            "metadata": item.get("metadata") or {},
+            "base_prompt_len": len(item.get("base_prompt") or ""),
+            "proposed_prompt_len": len(item.get("proposed_prompt") or ""),
+            "diff_len": len(diff),
+            "diff_preview": self._clip_text(diff, 1200),
+        }
+        if include_content:
+            summary["base_prompt"] = item.get("base_prompt") or ""
+            summary["proposed_prompt"] = item.get("proposed_prompt") or ""
+            summary["diff"] = diff
+        return summary
+
+    def _template_is_sensitive(self, item: dict[str, Any]) -> bool:
+        metadata = item.get("metadata") or {}
+        kind = str(metadata.get("kind") or "").lower()
+        haystack = " ".join(
+            [
+                str(item.get("template_id") or ""),
+                str(item.get("name") or ""),
+                str(item.get("description") or ""),
+                kind,
+            ]
+        ).lower()
+        return any(
+            marker in haystack
+            for marker in ("ops", "operation", "nsfw", "secret", "sensitive", "rule")
+        )
+
+    def _template_safe_summary(
+        self, item: dict[str, Any], include_content: bool = False
+    ) -> dict[str, Any]:
+        content = str(item.get("content") or "")
+        sensitive = self._template_is_sensitive(item)
+        summary = {
+            "template_id": item.get("template_id"),
+            "name": item.get("name") or "",
+            "description": item.get("description") or "",
+            "timestamp_iso": item.get("timestamp_iso"),
+            "variables": item.get("variables") or [],
+            "metadata": item.get("metadata") or {},
+            "content_len": len(content),
+            "content_preview": self._clip_text(content, 300)
+            if include_content and not sensitive
+            else "",
+            "sensitive": sensitive,
+            "content_hidden": not include_content or sensitive,
+        }
+        if include_content and not sensitive:
+            summary["content"] = content
+        elif include_content and sensitive:
+            summary["message"] = (
+                "该模板/模块被判定为敏感模块，LLM 工具默认不展开正文；请在前端由人类确认查看。"
+            )
+        return summary
+
+    def _module_link_row_to_item(
+        self, row: sqlite3.Row, include_content: bool = False
+    ) -> dict[str, Any]:
+        item = dict(row)
+        item["enabled"] = bool(item.get("enabled"))
+        item["metadata"] = self._loads(item.pop("metadata_json", None), {})
+        template = {
+            "template_id": item.pop("template_id"),
+            "name": item.pop("template_name", "") or "",
+            "description": item.pop("template_description", "") or "",
+            "timestamp_iso": item.pop("template_timestamp_iso", "") or "",
+            "content": item.pop("template_content", "") or "",
+            "variables": self._loads(item.pop("template_variables_json", None), []),
+            "metadata": self._loads(item.pop("template_metadata_json", None), {}),
+        }
+        item["template_id"] = template["template_id"]
+        item["template"] = self._template_safe_summary(template, include_content)
+        if include_content:
+            item["template"]["_raw_content_for_patch"] = template["content"]
+        return item
+
+    def _list_module_links(
+        self, persona_id: str, include_content: bool = False, enabled_only: bool = False
+    ) -> list[dict[str, Any]]:
+        where = "WHERE l.persona_id = ?"
+        params: list[Any] = [persona_id]
+        if enabled_only:
+            where += " AND l.enabled = 1"
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT l.*, t.name AS template_name, t.description AS template_description,
+                       t.timestamp_iso AS template_timestamp_iso,
+                       t.content AS template_content,
+                       t.variables_json AS template_variables_json,
+                       t.metadata_json AS template_metadata_json
+                FROM persona_module_links l
+                JOIN persona_templates t ON t.template_id = l.template_id
+                {where}
+                ORDER BY l.enabled DESC, l.order_index ASC, l.id ASC
+                """,
+                params,
+            ).fetchall()
+        return [self._module_link_row_to_item(row, include_content) for row in rows]
+
+    async def _create_patch_from_module_links(
+        self, persona_id: str, notes: str = "", trigger: str = ""
+    ) -> dict[str, Any]:
+        persona_id = str(persona_id or "").strip()
+        if not persona_id:
+            raise web.HTTPBadRequest(reason="persona_id 必填")
+        links = self._list_module_links(
+            persona_id, include_content=True, enabled_only=True
+        )
+        if not links:
+            raise web.HTTPBadRequest(reason="当前 persona 没有关联且启用的模块")
+        parts = []
+        module_refs = []
+        for link in links:
+            template = link["template"]
+            content = str(
+                template.get("_raw_content_for_patch") or template.get("content") or ""
+            )
+            if not content.strip():
+                continue
+            parts.append(
+                "\n".join(
+                    [
+                        f"<!-- module:{template['template_id']} role:{link.get('role') or 'custom'} -->",
+                        content,
+                    ]
+                )
+            )
+            module_refs.append(
+                {
+                    "link_id": link["id"],
+                    "template_id": template["template_id"],
+                    "role": link.get("role") or "",
+                    "order_index": link.get("order_index", 0),
+                }
+            )
+        if not parts:
+            raise web.HTTPBadRequest(reason="启用模块没有可组合的正文")
+        return await self._create_patch_record_from_data(
+            {
+                "persona_id": persona_id,
+                "proposed_prompt": "\n\n".join(parts).strip(),
+                "trigger": trigger or "由当前模块清单起草调整",
+                "changes": [
+                    {
+                        "aspect": "module_links",
+                        "after": [ref["template_id"] for ref in module_refs],
+                        "reason": "由 persona 关联模块清单组合生成，等待人类审核",
+                    }
+                ],
+                "notes": notes,
+                "metadata": {"source": "module_links", "module_links": module_refs},
+            }
+        )
+
     def _make_prompt_diff(
         self, persona_id: str, base_prompt: str, proposed_prompt: str
     ) -> str:
@@ -644,6 +838,24 @@ class PersonaSublimationPlugin(Star):
         app.router.add_get("/api/sessions", self.api_list_sessions)
         app.router.add_get("/api/personas", self.api_list_personas)
         app.router.add_get("/api/personas/{persona_id}", self.api_get_persona)
+        app.router.add_get(
+            "/api/personas/{persona_id}/modules", self.api_list_persona_modules
+        )
+        app.router.add_post(
+            "/api/personas/{persona_id}/modules", self.api_link_persona_module
+        )
+        app.router.add_patch(
+            r"/api/personas/{persona_id}/modules/{link_id:\d+}",
+            self.api_update_persona_module_link,
+        )
+        app.router.add_delete(
+            r"/api/personas/{persona_id}/modules/{link_id:\d+}",
+            self.api_unlink_persona_module,
+        )
+        app.router.add_post(
+            "/api/personas/{persona_id}/modules/patch",
+            self.api_create_patch_from_persona_modules,
+        )
         app.router.add_get("/api/observations", self.api_list_observations)
         app.router.add_post("/api/observations", self.api_create_observation)
         app.router.add_get(
@@ -872,6 +1084,147 @@ class PersonaSublimationPlugin(Star):
             )
         except Exception as exc:
             return web.json_response({"ok": False, "error": str(exc)}, status=404)
+
+    async def api_list_persona_modules(self, request: web.Request) -> web.Response:
+        persona_id = request.match_info.get("persona_id", "").strip()
+        if not persona_id:
+            return web.json_response(
+                {"ok": False, "error": "persona_id 必填"}, status=400
+            )
+        return web.json_response(
+            {"ok": True, "items": self._list_module_links(persona_id)}
+        )
+
+    async def api_link_persona_module(self, request: web.Request) -> web.Response:
+        persona_id = request.match_info.get("persona_id", "").strip()
+        data = await self._read_json(request)
+        template_id = str(data.get("template_id", "")).strip()
+        if not persona_id or not template_id:
+            return web.json_response(
+                {"ok": False, "error": "persona_id 和 template_id 必填"}, status=400
+            )
+        role = str(data.get("role") or data.get("kind") or "custom").strip()
+        enabled = 1 if bool(data.get("enabled", True)) else 0
+        order_index = int(data.get("order_index", 0) or 0)
+        notes = str(data.get("notes", "") or "")
+        _, iso = self._now()
+        with self._lock, self._connect() as conn:
+            exists = conn.execute(
+                "SELECT 1 FROM persona_templates WHERE template_id = ?",
+                (template_id,),
+            ).fetchone()
+            if not exists:
+                return web.json_response(
+                    {"ok": False, "error": "模板/模块不存在"}, status=404
+                )
+            conn.execute(
+                """
+                INSERT INTO persona_module_links
+                (persona_id, template_id, role, enabled, order_index, notes, created_at, updated_at, metadata_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(persona_id, template_id) DO UPDATE SET
+                    role=excluded.role,
+                    enabled=excluded.enabled,
+                    order_index=excluded.order_index,
+                    notes=excluded.notes,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    persona_id,
+                    template_id,
+                    role,
+                    enabled,
+                    order_index,
+                    notes,
+                    iso,
+                    iso,
+                    self._json(data.get("metadata", {}) or {}),
+                ),
+            )
+            conn.commit()
+            row = conn.execute(
+                """
+                SELECT l.*, t.name AS template_name, t.description AS template_description,
+                       t.timestamp_iso AS template_timestamp_iso, t.content AS template_content,
+                       t.variables_json AS template_variables_json, t.metadata_json AS template_metadata_json
+                FROM persona_module_links l
+                JOIN persona_templates t ON t.template_id = l.template_id
+                WHERE l.persona_id = ? AND l.template_id = ?
+                """,
+                (persona_id, template_id),
+            ).fetchone()
+        return web.json_response(
+            {"ok": True, "item": self._module_link_row_to_item(row)}
+        )
+
+    async def api_update_persona_module_link(
+        self, request: web.Request
+    ) -> web.Response:
+        persona_id = request.match_info.get("persona_id", "").strip()
+        link_id = int(request.match_info["link_id"])
+        data = await self._read_json(request)
+        _, iso = self._now()
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM persona_module_links WHERE id = ? AND persona_id = ?",
+                (link_id, persona_id),
+            ).fetchone()
+            if not row:
+                return web.json_response(
+                    {"ok": False, "error": "模块关联不存在"}, status=404
+                )
+            conn.execute(
+                """
+                UPDATE persona_module_links
+                SET role = ?, enabled = ?, order_index = ?, notes = ?, updated_at = ?
+                WHERE id = ? AND persona_id = ?
+                """,
+                (
+                    str(data.get("role", row["role"]) or "custom"),
+                    1 if bool(data.get("enabled", bool(row["enabled"]))) else 0,
+                    int(data.get("order_index", row["order_index"]) or 0),
+                    str(data.get("notes", row["notes"]) or ""),
+                    iso,
+                    link_id,
+                    persona_id,
+                ),
+            )
+            conn.commit()
+        return web.json_response(
+            {"ok": True, "items": self._list_module_links(persona_id)}
+        )
+
+    async def api_unlink_persona_module(self, request: web.Request) -> web.Response:
+        persona_id = request.match_info.get("persona_id", "").strip()
+        link_id = int(request.match_info["link_id"])
+        with self._lock, self._connect() as conn:
+            cur = conn.execute(
+                "DELETE FROM persona_module_links WHERE id = ? AND persona_id = ?",
+                (link_id, persona_id),
+            )
+            conn.commit()
+        if cur.rowcount <= 0:
+            return web.json_response(
+                {"ok": False, "error": "模块关联不存在"}, status=404
+            )
+        return web.json_response({"ok": True, "deleted_link_id": link_id})
+
+    async def api_create_patch_from_persona_modules(
+        self, request: web.Request
+    ) -> web.Response:
+        persona_id = request.match_info.get("persona_id", "").strip()
+        data = await self._read_json(request)
+        try:
+            result = await self._create_patch_from_module_links(
+                persona_id,
+                notes=str(data.get("notes", "") or ""),
+                trigger=str(data.get("trigger", "") or ""),
+            )
+        except web.HTTPException as exc:
+            return web.json_response(
+                {"ok": False, "error": exc.reason}, status=exc.status
+            )
+        return web.json_response({"ok": True, **result})
 
     async def api_list_observations(self, request: web.Request) -> web.Response:
         persona_id = request.query.get("persona_id", "").strip()
@@ -1520,6 +1873,36 @@ class PersonaSublimationPlugin(Star):
                         self._json(metadata),
                     ),
                 )
+                default_roles = {
+                    "persona_lingjiu-2.md": ("persona", 10),
+                    "meta_preamble.md": ("meta", 20),
+                    "system_rules.md": ("system", 30),
+                    "nsfw_module.md": ("nsfw", 40),
+                    "roleplay_module.md": ("roleplay", 50),
+                    "pending_ops_module_lingjiu-2.md": ("ops", 60),
+                    "persona_intimate_lingjiu-2.md": ("persona", 70),
+                }
+                if name in default_roles:
+                    role, order_index = default_roles[name]
+                    conn.execute(
+                        """
+                        INSERT INTO persona_module_links
+                        (persona_id, template_id, role, enabled, order_index, notes, created_at, updated_at, metadata_json)
+                        VALUES ('lingjiu-2', ?, ?, 1, ?, '由旧 skill 迁移时建立的默认模块关联；不会自动写入 persona', ?, ?, ?)
+                        ON CONFLICT(persona_id, template_id) DO UPDATE SET
+                            role=excluded.role,
+                            order_index=excluded.order_index,
+                            updated_at=excluded.updated_at
+                        """,
+                        (
+                            template_id,
+                            role,
+                            order_index,
+                            iso,
+                            iso,
+                            self._json({"source": "skill-migration"}),
+                        ),
+                    )
                 conn.commit()
             migrated.append(str(asset))
 
@@ -2018,6 +2401,627 @@ class PersonaSublimationPlugin(Star):
             )
             conn.commit()
         return web.json_response({"ok": True, "persona_id": persona_id})
+
+    @filter.llm_tool(name="persona_sublimation_list_personas")
+    async def tool_list_personas(self, event: AstrMessageEvent) -> dict[str, Any]:
+        """列出可维护的人格状态摘要，不返回完整 system_prompt。
+
+        Args:
+        """
+        try:
+            personas = await self.context.persona_manager.get_all_personas()
+            with self._lock, self._connect() as conn:
+                obs_counts = {
+                    row["persona_id"]: int(row["c"])
+                    for row in conn.execute(
+                        "SELECT persona_id, COUNT(*) AS c FROM persona_observations GROUP BY persona_id"
+                    )
+                }
+                patch_counts = {
+                    row["persona_id"]: int(row["c"])
+                    for row in conn.execute(
+                        "SELECT persona_id, COUNT(*) AS c FROM persona_patches GROUP BY persona_id"
+                    )
+                }
+                snapshot_counts = {
+                    row["persona_id"]: int(row["c"])
+                    for row in conn.execute(
+                        "SELECT persona_id, COUNT(*) AS c FROM persona_snapshots GROUP BY persona_id"
+                    )
+                }
+            return {
+                "ok": True,
+                "items": [
+                    {
+                        "persona_id": p.persona_id,
+                        "system_prompt_len": len(p.system_prompt or ""),
+                        "updated_at": str(getattr(p, "updated_at", "") or ""),
+                        "observation_count": obs_counts.get(p.persona_id, 0),
+                        "patch_count": patch_counts.get(p.persona_id, 0),
+                        "snapshot_count": snapshot_counts.get(p.persona_id, 0),
+                    }
+                    for p in personas
+                ],
+            }
+        except Exception as exc:
+            return {"ok": False, "error": f"列出人格失败：{exc}"}
+
+    @filter.llm_tool(name="persona_sublimation_add_observation")
+    async def tool_add_observation(
+        self,
+        event: AstrMessageEvent,
+        persona_id: str,
+        content: str,
+        source: str = "",
+        interpretation: str = "",
+        emotion: str = "",
+    ) -> dict[str, Any]:
+        """为指定 persona 记录一条观察，不修改 persona。
+
+        Args:
+            persona_id(string): 要记录观察的 persona_id，必须明确指定。
+            content(string): 观察内容。
+            source(string): 来源，可为空，例如 owner-feedback/session/capture。
+            interpretation(string): 对观察的理解，可为空。
+            emotion(string): 情绪标记，可为空。
+        """
+        persona_id = str(persona_id or "").strip()
+        content = str(content or "").strip()
+        if not persona_id or not content:
+            return {"ok": False, "error": "persona_id 和 content 必填"}
+        ts, iso = self._now()
+        with self._lock, self._connect() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO persona_observations
+                (timestamp, timestamp_iso, persona_id, source, content, interpretation, emotion, metadata_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    ts,
+                    iso,
+                    persona_id,
+                    str(source or ""),
+                    content,
+                    str(interpretation or ""),
+                    str(emotion or ""),
+                    self._json({"created_by": "llm_tool"}),
+                ),
+            )
+            conn.commit()
+            observation_id = cur.lastrowid
+        return {
+            "ok": True,
+            "id": observation_id,
+            "persona_id": persona_id,
+            "message": "观察已记录，未修改 persona。",
+        }
+
+    @filter.llm_tool(name="persona_sublimation_list_observations")
+    async def tool_list_observations(
+        self, event: AstrMessageEvent, persona_id: str, limit: int = 10
+    ) -> dict[str, Any]:
+        """列出指定 persona 的观察摘要。
+
+        Args:
+            persona_id(string): 要查询的 persona_id。
+            limit(number): 返回数量，默认 10，最多 50。
+        """
+        persona_id = str(persona_id or "").strip()
+        if not persona_id:
+            return {"ok": False, "error": "persona_id 必填"}
+        limit = min(50, max(1, int(limit or 10)))
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM persona_observations
+                WHERE persona_id = ?
+                ORDER BY timestamp DESC, id DESC
+                LIMIT ?
+                """,
+                (persona_id, limit),
+            ).fetchall()
+        return {
+            "ok": True,
+            "items": [
+                {
+                    "id": row["id"],
+                    "persona_id": row["persona_id"],
+                    "timestamp_iso": row["timestamp_iso"],
+                    "source": row["source"],
+                    "emotion": row["emotion"],
+                    "content_preview": self._clip_text(row["content"], 300),
+                    "interpretation_preview": self._clip_text(
+                        row["interpretation"], 200
+                    ),
+                }
+                for row in rows
+            ],
+        }
+
+    @filter.llm_tool(name="persona_sublimation_create_patch_draft")
+    async def tool_create_patch_draft(
+        self,
+        event: AstrMessageEvent,
+        persona_id: str,
+        trigger: str,
+        proposed_prompt: str = "",
+        changes: list | None = None,
+        notes: str = "",
+        base_prompt: str = "",
+    ) -> dict[str, Any]:
+        """为指定 persona 起草 pending 调整，不审批也不应用。
+
+        Args:
+            persona_id(string): 要起草调整的 persona_id，必须明确指定。
+            trigger(string): 起草原因。
+            proposed_prompt(string): 拟议 system_prompt；可为空，空则只记录结构化草案。
+            changes(array): 结构化调整项，可为空数组。
+            notes(string): 给人类审核者看的备注。
+            base_prompt(string): 安全检查基线；可为空，空则取当前 persona prompt 作为基线。
+        """
+        try:
+            data = {
+                "persona_id": str(persona_id or "").strip(),
+                "trigger": str(trigger or ""),
+                "changes": changes or [],
+                "notes": str(notes or ""),
+                "metadata": {"created_by": "llm_tool"},
+            }
+            if proposed_prompt:
+                data["proposed_prompt"] = str(proposed_prompt)
+            if base_prompt:
+                data["base_prompt"] = str(base_prompt)
+            result = await self._create_patch_record_from_data(data)
+            return {
+                "ok": True,
+                **result,
+                "status": "pending",
+                "message": "已起草 pending 调整；LLM 工具不会应用补丁，请到前端由人类审批/应用。",
+            }
+        except web.HTTPException as exc:
+            return {"ok": False, "error": exc.reason}
+        except Exception as exc:
+            return {"ok": False, "error": f"起草调整失败：{exc}"}
+
+    @filter.llm_tool(name="persona_sublimation_list_patches")
+    async def tool_list_patches(
+        self,
+        event: AstrMessageEvent,
+        persona_id: str,
+        status: str = "",
+        limit: int = 10,
+    ) -> dict[str, Any]:
+        """列出指定 persona 的调整草案/补丁摘要，不返回完整 prompt。
+
+        Args:
+            persona_id(string): 要查询的 persona_id。
+            status(string): 可选状态过滤：pending/approved/applied。
+            limit(number): 返回数量，默认 10，最多 50。
+        """
+        persona_id = str(persona_id or "").strip()
+        status = str(status or "").strip()
+        if not persona_id:
+            return {"ok": False, "error": "persona_id 必填"}
+        limit = min(50, max(1, int(limit or 10)))
+        where = "WHERE persona_id = ?"
+        params: list[Any] = [persona_id]
+        if status:
+            where += " AND status = ?"
+            params.append(status)
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT * FROM persona_patches
+                {where}
+                ORDER BY timestamp DESC, id DESC
+                LIMIT ?
+                """,
+                (*params, limit),
+            ).fetchall()
+        return {
+            "ok": True,
+            "items": [
+                self._patch_safe_summary(self._patch_row_to_item(row), False)
+                for row in rows
+            ],
+        }
+
+    @filter.llm_tool(name="persona_sublimation_get_patch")
+    async def tool_get_patch(
+        self, event: AstrMessageEvent, patch_id: str, include_content: bool = False
+    ) -> dict[str, Any]:
+        """查看某个调整草案/补丁；默认不返回完整 base/proposed prompt。
+
+        Args:
+            patch_id(string): patch_id。
+            include_content(boolean): 是否显式返回完整 base_prompt/proposed_prompt/diff，默认 false。
+        """
+        patch_id = str(patch_id or "").strip()
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM persona_patches WHERE patch_id = ?", (patch_id,)
+            ).fetchone()
+        if not row:
+            return {"ok": False, "error": "补丁不存在"}
+        return {
+            "ok": True,
+            "item": self._patch_safe_summary(
+                self._patch_row_to_item(row), bool(include_content)
+            ),
+            "message": "该工具只查看/摘要补丁，不会审批或应用。",
+        }
+
+    @filter.llm_tool(name="persona_sublimation_create_snapshot")
+    async def tool_create_snapshot(
+        self,
+        event: AstrMessageEvent,
+        persona_id: str,
+        label: str = "",
+        description: str = "",
+    ) -> dict[str, Any]:
+        """留存指定 persona 的当前版本快照，不修改 persona。
+
+        Args:
+            persona_id(string): 要留存版本的 persona_id，必须明确指定。
+            label(string): 快照标签，可为空。
+            description(string): 快照说明，可为空。
+        """
+        persona_id = str(persona_id or "").strip()
+        if not persona_id:
+            return {"ok": False, "error": "persona_id 必填"}
+        try:
+            persona = await self.context.persona_manager.get_persona(persona_id)
+        except Exception as exc:
+            return {"ok": False, "error": f"读取 persona 失败：{exc}"}
+        content = persona.system_prompt or ""
+        if not content.strip():
+            return {"ok": False, "error": "当前 persona system_prompt 为空，无法留存"}
+        with self._lock, self._connect() as conn:
+            snapshot_id = self._insert_snapshot_record(
+                conn,
+                persona_id=persona_id,
+                content=content,
+                label=label or f"LLM 留存当前版本：{persona_id}",
+                source="llm-tool",
+                metadata={
+                    "description": description,
+                    "created_by": "llm_tool",
+                },
+            )
+            conn.commit()
+        return {
+            "ok": True,
+            "snapshot_id": snapshot_id,
+            "persona_id": persona_id,
+            "content_len": len(content),
+            "message": "当前版本已留存；未修改 persona。",
+        }
+
+    @filter.llm_tool(name="persona_sublimation_list_snapshots")
+    async def tool_list_snapshots(
+        self, event: AstrMessageEvent, persona_id: str, limit: int = 10
+    ) -> dict[str, Any]:
+        """列出指定 persona 的版本快照摘要，不返回正文。
+
+        Args:
+            persona_id(string): 要查询的 persona_id。
+            limit(number): 返回数量，默认 10，最多 50。
+        """
+        persona_id = str(persona_id or "").strip()
+        if not persona_id:
+            return {"ok": False, "error": "persona_id 必填"}
+        limit = min(50, max(1, int(limit or 10)))
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM persona_snapshots
+                WHERE persona_id = ?
+                ORDER BY timestamp DESC, id DESC
+                LIMIT ?
+                """,
+                (persona_id, limit),
+            ).fetchall()
+        return {
+            "ok": True,
+            "items": [
+                self._snapshot_row_to_item(row, include_content=False) for row in rows
+            ],
+        }
+
+    @filter.llm_tool(name="persona_sublimation_list_templates")
+    async def tool_list_templates(
+        self, event: AstrMessageEvent, limit: int = 20
+    ) -> dict[str, Any]:
+        """列出模板/模块摘要，不展开正文。
+
+        Args:
+            limit(number): 返回数量，默认 20，最多 100。
+        """
+        limit = min(100, max(1, int(limit or 20)))
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM persona_templates
+                ORDER BY timestamp DESC, id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        items = []
+        for row in rows:
+            item = dict(row)
+            for key in ("variables_json", "metadata_json"):
+                item[key.removesuffix("_json")] = self._loads(item.pop(key), None)
+            items.append(self._template_safe_summary(item, include_content=False))
+        return {"ok": True, "items": items}
+
+    @filter.llm_tool(name="persona_sublimation_get_template")
+    async def tool_get_template(
+        self,
+        event: AstrMessageEvent,
+        template_id: str,
+        include_content: bool = False,
+    ) -> dict[str, Any]:
+        """查看模板/模块；默认不展开正文，敏感模块即使请求展开也会隐藏。
+
+        Args:
+            template_id(string): template_id。
+            include_content(boolean): 是否显式请求返回正文，默认 false；敏感模块仍不会展开。
+        """
+        template_id = str(template_id or "").strip()
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM persona_templates WHERE template_id = ?",
+                (template_id,),
+            ).fetchone()
+        if not row:
+            return {"ok": False, "error": "模板/模块不存在"}
+        item = dict(row)
+        for key in ("variables_json", "metadata_json"):
+            item[key.removesuffix("_json")] = self._loads(item.pop(key), None)
+        return {
+            "ok": True,
+            "item": self._template_safe_summary(item, bool(include_content)),
+        }
+
+    @filter.llm_tool(name="persona_sublimation_generate_patch_from_snapshot")
+    async def tool_generate_patch_from_snapshot(
+        self,
+        event: AstrMessageEvent,
+        persona_id: str,
+        snapshot_id: str,
+        trigger: str = "",
+    ) -> dict[str, Any]:
+        """由某个快照起草 pending 调整，不审批也不应用。
+
+        Args:
+            persona_id(string): 要生成调整草案的目标 persona_id。
+            snapshot_id(string): 快照 ID。
+            trigger(string): 起草原因，可为空。
+        """
+        persona_id = str(persona_id or "").strip()
+        snapshot_id = str(snapshot_id or "").strip()
+        if not persona_id or not snapshot_id:
+            return {"ok": False, "error": "persona_id 和 snapshot_id 必填"}
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM persona_snapshots WHERE snapshot_id = ?",
+                (snapshot_id,),
+            ).fetchone()
+        if not row:
+            return {"ok": False, "error": "快照不存在"}
+        snapshot = self._snapshot_row_to_item(row, include_content=True)
+        try:
+            result = await self._create_patch_record_from_data(
+                {
+                    "persona_id": persona_id,
+                    "proposed_prompt": snapshot.get("content") or "",
+                    "trigger": trigger
+                    or f"由快照起草调整：{snapshot.get('label') or snapshot_id}",
+                    "changes": [
+                        {
+                            "aspect": "snapshot",
+                            "after": snapshot_id,
+                            "reason": "LLM 工具由快照起草，等待人类审核",
+                        }
+                    ],
+                    "metadata": {
+                        "source": "llm_tool_snapshot",
+                        "snapshot_id": snapshot_id,
+                        "created_by": "llm_tool",
+                    },
+                }
+            )
+            return {
+                "ok": True,
+                **result,
+                "status": "pending",
+                "message": "已由快照起草 pending 调整；请到前端由人类审批/应用。",
+            }
+        except Exception as exc:
+            return {"ok": False, "error": f"由快照起草失败：{exc}"}
+
+    @filter.llm_tool(name="persona_sublimation_generate_patch_from_template")
+    async def tool_generate_patch_from_template(
+        self,
+        event: AstrMessageEvent,
+        persona_id: str,
+        template_id: str,
+        trigger: str = "",
+    ) -> dict[str, Any]:
+        """由某个模板/模块起草 pending 调整，不审批也不应用。
+
+        Args:
+            persona_id(string): 要生成调整草案的目标 persona_id。
+            template_id(string): 模板/模块 ID。
+            trigger(string): 起草原因，可为空。
+        """
+        persona_id = str(persona_id or "").strip()
+        template_id = str(template_id or "").strip()
+        if not persona_id or not template_id:
+            return {"ok": False, "error": "persona_id 和 template_id 必填"}
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM persona_templates WHERE template_id = ?",
+                (template_id,),
+            ).fetchone()
+        if not row:
+            return {"ok": False, "error": "模板/模块不存在"}
+        template = dict(row)
+        for key in ("variables_json", "metadata_json"):
+            template[key.removesuffix("_json")] = self._loads(template.pop(key), None)
+        try:
+            result = await self._create_patch_record_from_data(
+                {
+                    "persona_id": persona_id,
+                    "proposed_prompt": str(template.get("content") or ""),
+                    "trigger": trigger
+                    or f"由模板/模块起草调整：{template.get('name') or template_id}",
+                    "changes": [
+                        {
+                            "aspect": "template",
+                            "after": template_id,
+                            "reason": "LLM 工具由模板/模块起草，等待人类审核",
+                        }
+                    ],
+                    "metadata": {
+                        "source": "llm_tool_template",
+                        "template_id": template_id,
+                        "created_by": "llm_tool",
+                    },
+                }
+            )
+            return {
+                "ok": True,
+                **result,
+                "status": "pending",
+                "message": "已由模板/模块起草 pending 调整；请到前端由人类审批/应用。",
+            }
+        except Exception as exc:
+            return {"ok": False, "error": f"由模板/模块起草失败：{exc}"}
+
+    @filter.llm_tool(name="persona_sublimation_list_persona_modules")
+    async def tool_list_persona_modules(
+        self, event: AstrMessageEvent, persona_id: str
+    ) -> dict[str, Any]:
+        """列出某个 persona 已关联的模块清单，不返回模块正文。
+
+        Args:
+            persona_id(string): 要查询的 persona_id。
+        """
+        persona_id = str(persona_id or "").strip()
+        if not persona_id:
+            return {"ok": False, "error": "persona_id 必填"}
+        return {"ok": True, "items": self._list_module_links(persona_id)}
+
+    @filter.llm_tool(name="persona_sublimation_link_module")
+    async def tool_link_module(
+        self,
+        event: AstrMessageEvent,
+        persona_id: str,
+        template_id: str,
+        role: str = "",
+        enabled: bool = True,
+        order_index: int = 0,
+        notes: str = "",
+    ) -> dict[str, Any]:
+        """把模板/模块资产关联到某个 persona；只记录装配关系，不修改 persona。
+
+        Args:
+            persona_id(string): 目标 persona_id。
+            template_id(string): 要关联的模板/模块 ID。
+            role(string): 模块角色，例如 meta/persona/system/nsfw/roleplay/ops/custom。
+            enabled(boolean): 是否启用该关联。
+            order_index(number): 模块顺序。
+            notes(string): 备注。
+        """
+        persona_id = str(persona_id or "").strip()
+        template_id = str(template_id or "").strip()
+        if not persona_id or not template_id:
+            return {"ok": False, "error": "persona_id 和 template_id 必填"}
+        _, iso = self._now()
+        with self._lock, self._connect() as conn:
+            exists = conn.execute(
+                "SELECT 1 FROM persona_templates WHERE template_id = ?",
+                (template_id,),
+            ).fetchone()
+            if not exists:
+                return {"ok": False, "error": "模板/模块不存在"}
+            conn.execute(
+                """
+                INSERT INTO persona_module_links
+                (persona_id, template_id, role, enabled, order_index, notes, created_at, updated_at, metadata_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(persona_id, template_id) DO UPDATE SET
+                    role=excluded.role,
+                    enabled=excluded.enabled,
+                    order_index=excluded.order_index,
+                    notes=excluded.notes,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    persona_id,
+                    template_id,
+                    role or "custom",
+                    1 if enabled else 0,
+                    int(order_index or 0),
+                    notes or "",
+                    iso,
+                    iso,
+                    self._json({"created_by": "llm_tool"}),
+                ),
+            )
+            conn.commit()
+        return {
+            "ok": True,
+            "items": self._list_module_links(persona_id),
+            "message": "模块已关联到 persona；未修改原版 persona。",
+        }
+
+    @filter.llm_tool(name="persona_sublimation_unlink_module")
+    async def tool_unlink_module(
+        self, event: AstrMessageEvent, persona_id: str, link_id: int
+    ) -> dict[str, Any]:
+        """解除 persona 与模块的关联；不删除模块本体，不修改 persona。
+
+        Args:
+            persona_id(string): 目标 persona_id。
+            link_id(number): 模块关联 ID。
+        """
+        persona_id = str(persona_id or "").strip()
+        with self._lock, self._connect() as conn:
+            cur = conn.execute(
+                "DELETE FROM persona_module_links WHERE id = ? AND persona_id = ?",
+                (int(link_id), persona_id),
+            )
+            conn.commit()
+        if cur.rowcount <= 0:
+            return {"ok": False, "error": "模块关联不存在"}
+        return {"ok": True, "deleted_link_id": int(link_id)}
+
+    @filter.llm_tool(name="persona_sublimation_create_patch_from_modules")
+    async def tool_create_patch_from_modules(
+        self, event: AstrMessageEvent, persona_id: str, notes: str = ""
+    ) -> dict[str, Any]:
+        """由当前 persona 已启用模块清单起草 pending 调整；不审批也不应用。
+
+        Args:
+            persona_id(string): 目标 persona_id。
+            notes(string): 给人类审核者看的备注。
+        """
+        try:
+            result = await self._create_patch_from_module_links(persona_id, notes)
+            return {
+                "ok": True,
+                **result,
+                "status": "pending",
+                "message": "已由模块清单起草 pending 调整；请到前端由人类审批/应用。",
+            }
+        except web.HTTPException as exc:
+            return {"ok": False, "error": exc.reason}
+        except Exception as exc:
+            return {"ok": False, "error": f"由模块清单起草失败：{exc}"}
 
     def _get_capture_item(self, capture_id: int) -> dict[str, Any] | None:
         with self._lock, self._connect() as conn:
