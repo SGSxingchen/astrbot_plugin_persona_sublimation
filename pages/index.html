@@ -9,7 +9,7 @@
   </style>
 </head>
 <body>
-<header><div class="top"><div><div class="brand">人格升华工作台</div><div class="warn">无内置鉴权：只在可信网络使用。所有变更必须由人类点击确认；快照/模板不会直接应用到人格。</div></div><div class="row"><button class="secondary" onclick="reloadAll()">全部刷新</button></div></div></header>
+<header><div class="top"><div><div class="brand">人格升华工作台</div><div class="warn">无内置鉴权：只在可信网络使用。所有变更必须由人类点击确认；快照/模块不会直接应用到人格。</div></div><div class="row"><button class="secondary" onclick="reloadAll()">全部刷新</button></div></div></header>
 <div class="wrap">
   <aside class="card">
     <h2>当前人格</h2>
@@ -54,7 +54,7 @@
           <label class="field"><span>proposed_prompt（拟议写入内容）</span><textarea id="patchProposed"></textarea></label>
           <div class="row"><button onclick="createOrUpdatePatch()">保存草案</button><button class="secondary" onclick="resetPatchEditor()">起草调整</button><button class="danger" onclick="deleteSelectedPatch()">放弃草案</button></div>
         </div>
-        <div class="stack"><h3>调整列表与审核流程</h3><div id="patchesList" class="list"></div><h3>草案详情</h3><div id="patchDetail" class="mutedbox mini">选择一份草案查看详情。</div><div class="row"><button class="good" onclick="approveSelectedPatch()">审批</button><button class="danger" onclick="applySelectedPatch()">应用</button><button class="danger" onclick="approveAndApplySelectedPatch()">直接审批并应用</button></div><pre id="patchDiff" class="diff">这里会显示 diff</pre></div>
+        <div class="stack"><h3>调整列表与审核流程</h3><div id="patchesList" class="list"></div><h3>草案详情</h3><div id="patchDetail" class="mutedbox mini">选择一份草案查看详情。</div><div class="row"><button class="good" onclick="approveSelectedPatch()">审批</button><button class="danger" onclick="applySelectedPatch()">应用到人格</button><button class="danger" onclick="approveAndApplySelectedPatch()">直接审批并应用到人格</button></div><pre id="patchDiff" class="diff">这里会显示 diff</pre></div>
       </div></section>
 
       <section id="tab-snapshots" class="section"><div class="split">
@@ -69,13 +69,13 @@
       </div></section>
 
       <section id="tab-templates" class="section"><div class="split">
-        <div class="stack"><h3>模板 / 模块</h3>
-          <label class="field"><span>template_id（留空表示收纳新模块）</span><input id="templateId" placeholder="空则自动生成" /></label>
-          <label class="field"><span>名称</span><input id="templateName" placeholder="模板或模块名称" /></label>
+        <div class="stack"><h3>模块库</h3>
+          <label class="field"><span>module_id / template_id（留空表示收纳新模块）</span><input id="templateId" placeholder="空则自动生成" /></label>
+          <label class="field"><span>名称</span><input id="templateName" placeholder="模块名称" /></label>
           <label class="field"><span>说明</span><textarea id="templateDescription" placeholder="用途说明"></textarea></label>
-          <label class="field"><span>类型/metadata.kind</span><input id="templateKind" placeholder="template / module / nsfw_module ..." /></label>
-          <label class="field"><span>内容（敏感内容需确认后才展开）</span><textarea id="templateContent" placeholder="模板/模块正文"></textarea></label>
-          <div class="row"><button onclick="saveTemplate()">更新内容</button><button class="secondary" onclick="resetTemplateEditor()">收纳模板</button><button class="danger" onclick="deleteTemplate()">移除</button><button class="blue" onclick="createPatchFromTemplate()">由此起草调整</button></div>
+          <label class="field"><span>类型/metadata.kind</span><input id="templateKind" placeholder="module / nsfw_module / roleplay_module ..." /></label>
+          <label class="field"><span>内容（敏感内容需确认后才展开）</span><textarea id="templateContent" placeholder="模块正文"></textarea></label>
+          <div class="row"><button onclick="saveTemplate()">更新内容</button><button class="secondary" onclick="resetTemplateEditor()">收纳模块</button><button class="danger" onclick="deleteTemplate()">移除</button><button class="blue" onclick="createPatchFromTemplate()">由此起草调整</button></div>
         </div>
         <div class="stack">
           <h3>当前人格模块清单</h3>
@@ -96,7 +96,7 @@
         <div class="stack"><h3>当前人格档案</h3>
           <label class="field"><span>显示名</span><input id="profileDisplay" placeholder="显示名" /></label>
           <label class="field"><span>原型</span><input id="profileArchetype" placeholder="人格原型 / 定位" /></label>
-          <label class="field"><span>关联模板 ID</span><input id="profileTemplate" placeholder="template_id，可留空" /></label>
+          <label class="field"><span>关联模块 ID</span><input id="profileTemplate" placeholder="template_id，可留空" /></label>
           <label class="field"><span>备注</span><textarea id="profileNotes" placeholder="人类维护备注"></textarea></label>
           <div class="row"><button onclick="saveProfile()">保存资料</button><button class="danger" onclick="deleteProfile()">清空资料</button><button class="secondary" onclick="loadProfile()">查看/刷新</button></div>
         </div>
@@ -158,11 +158,11 @@ async function unlinkModule(id){const pid=selectedPersona(); if(!confirm('确定
 async function createPatchFromModuleLinks(){const pid=selectedPersona(); const data=await api('/personas/'+encodeURIComponent(pid)+'/modules/patch',{method:'POST',body:JSON.stringify({notes:'由前端模块清单起草'})}); toast('已由模块清单起草 pending 调整：'+data.patch_id); switchTab('patches'); await loadPatches(); await selectPatchById(data.patch_id);}
 
 function resetTemplateEditor(){state.selectedTemplate=null; $('templateId').value=''; $('templateId').readOnly=false; $('templateName').value=''; $('templateDescription').value=''; $('templateKind').value=''; $('templateContent').value='';}
-async function loadTemplates(){const data=await api('/templates'); const items=data.items||[]; $('templatesList').innerHTML=items.map(t=>`<div class="item" onclick="viewTemplate('${esc(t.template_id)}')"><div class="item-title">${esc(t.name||t.template_id)}</div><div class="item-meta">${esc(t.template_id)} · ${esc(t.metadata?.kind||'模板')} · ${esc((t.content||'').length)} 字</div><div>${esc(t.description||'')}</div></div>`).join('')||'<div class="mutedbox">暂无模板/模块</div>'; $('moduleLinkTemplate').innerHTML=items.map(t=>`<option value="${esc(t.template_id)}">${esc(t.name||t.template_id)} · ${esc(t.template_id)}</option>`).join('');}
-async function viewTemplate(id){if(!confirm('确定展开模板/模块内容吗？里面可能包含敏感提示词材料。'))return; const data=await api('/templates/'+encodeURIComponent(id)); const t=data.item; state.selectedTemplate=t; $('templateId').value=t.template_id; $('templateId').readOnly=true; $('templateName').value=t.name||''; $('templateDescription').value=t.description||''; $('templateKind').value=t.metadata?.kind||''; $('templateContent').value=t.content||'';}
-async function saveTemplate(){const id=$('templateId').value.trim(); const metadata={kind:$('templateKind').value||'template'}; const body={template_id:id,name:$('templateName').value,description:$('templateDescription').value,content:$('templateContent').value,metadata}; if(id && state.selectedTemplate){const data=await api('/templates/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify(body)}); toast('模板/模块已更新'); await loadTemplates(); await viewTemplate(data.item.template_id);}else{const data=await api('/templates',{method:'POST',body:JSON.stringify(body)}); toast('模板/模块已收纳'); await loadTemplates(); await viewTemplate(data.template_id);}}
-async function deleteTemplate(){const id=$('templateId').value.trim(); if(!id)return toast('请先查看一份模板/模块'); if(!confirm(`确定移除模板/模块 ${id} 吗？`))return; await api('/templates/'+encodeURIComponent(id),{method:'DELETE'}); toast('模板/模块已移除'); resetTemplateEditor(); await loadTemplates();}
-async function createPatchFromTemplate(){const id=$('templateId').value.trim(); if(!id)return toast('请先查看一份模板/模块'); const data=await api('/templates/'+encodeURIComponent(id)+'/patch',{method:'POST',body:JSON.stringify({persona_id:selectedPersona()})}); toast('已由该模块起草 pending 调整：'+data.patch_id); switchTab('patches'); await loadPatches(); await selectPatchById(data.patch_id);}
+async function loadTemplates(){const data=await api('/templates'); const items=data.items||[]; $('templatesList').innerHTML=items.map(t=>`<div class="item" onclick="viewTemplate('${esc(t.template_id)}')"><div class="item-title">${esc(t.name||t.template_id)}</div><div class="item-meta">${esc(t.template_id)} · ${esc(t.metadata?.kind||'模块')} · ${esc((t.content||'').length)} 字</div><div>${esc(t.description||'')}</div></div>`).join('')||'<div class="mutedbox">暂无模块</div>'; $('moduleLinkTemplate').innerHTML=items.map(t=>`<option value="${esc(t.template_id)}">${esc(t.name||t.template_id)} · ${esc(t.template_id)}</option>`).join('');}
+async function viewTemplate(id){if(!confirm('确定展开模块内容吗？里面可能包含敏感提示词内容。'))return; const data=await api('/templates/'+encodeURIComponent(id)); const t=data.item; state.selectedTemplate=t; $('templateId').value=t.template_id; $('templateId').readOnly=true; $('templateName').value=t.name||''; $('templateDescription').value=t.description||''; $('templateKind').value=t.metadata?.kind||''; $('templateContent').value=t.content||'';}
+async function saveTemplate(){const id=$('templateId').value.trim(); const metadata={kind:$('templateKind').value||'template'}; const body={template_id:id,name:$('templateName').value,description:$('templateDescription').value,content:$('templateContent').value,metadata}; if(id && state.selectedTemplate){const data=await api('/templates/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify(body)}); toast('模块已更新'); await loadTemplates(); await viewTemplate(data.item.template_id);}else{const data=await api('/templates',{method:'POST',body:JSON.stringify(body)}); toast('模块已收纳'); await loadTemplates(); await viewTemplate(data.template_id);}}
+async function deleteTemplate(){const id=$('templateId').value.trim(); if(!id)return toast('请先查看一个模块'); if(!confirm(`确定移除模块 ${id} 吗？`))return; await api('/templates/'+encodeURIComponent(id),{method:'DELETE'}); toast('模块已移除'); resetTemplateEditor(); await loadTemplates();}
+async function createPatchFromTemplate(){const id=$('templateId').value.trim(); if(!id)return toast('请先查看一个模块'); const data=await api('/templates/'+encodeURIComponent(id)+'/patch',{method:'POST',body:JSON.stringify({persona_id:selectedPersona()})}); toast('已由该模块起草 pending 调整：'+data.patch_id); switchTab('patches'); await loadPatches(); await selectPatchById(data.patch_id);}
 
 async function loadProfile(){const pid=selectedPersona(); if(!pid)return; const data=await api('/profiles/'+encodeURIComponent(pid)); const p=data.item; state.profile=p; $('profileDisplay').value=p.display_name||''; $('profileArchetype').value=p.archetype||''; $('profileTemplate').value=p.template_id||''; $('profileNotes').value=p.notes||''; $('profileRaw').textContent=JSON.stringify(p,null,2);}
 async function saveProfile(){const pid=selectedPersona(); const body={display_name:$('profileDisplay').value,archetype:$('profileArchetype').value,template_id:$('profileTemplate').value||null,notes:$('profileNotes').value}; await api('/profiles/'+encodeURIComponent(pid),{method:'POST',body:JSON.stringify(body)}); toast('档案已保存'); await loadProfile();}

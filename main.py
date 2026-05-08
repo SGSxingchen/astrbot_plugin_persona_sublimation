@@ -924,7 +924,7 @@ class PersonaSublimationPlugin(Star):
             summary["content"] = content
         elif include_content and sensitive:
             summary["message"] = (
-                "该模板/模块被判定为敏感模块，LLM 工具默认不展开正文；请在前端由人类确认查看。"
+                "该模块被判定为敏感模块，LLM 工具默认不展开正文；请在前端由人类确认查看。"
             )
         return summary
 
@@ -1485,7 +1485,7 @@ class PersonaSublimationPlugin(Star):
             ).fetchone()
             if not exists:
                 return web.json_response(
-                    {"ok": False, "error": "模板/模块不存在"}, status=404
+                    {"ok": False, "error": "模块不存在"}, status=404
                 )
             conn.execute(
                 """
@@ -2506,7 +2506,7 @@ class PersonaSublimationPlugin(Star):
             ).fetchone()
         if not row:
             return web.json_response(
-                {"ok": False, "error": "模板/模块不存在"}, status=404
+                {"ok": False, "error": "模块不存在"}, status=404
             )
         item = dict(row)
         for key in ("variables_json", "metadata_json"):
@@ -2562,7 +2562,7 @@ class PersonaSublimationPlugin(Star):
             ).fetchone()
             if not row:
                 return web.json_response(
-                    {"ok": False, "error": "模板/模块不存在"}, status=404
+                    {"ok": False, "error": "模块不存在"}, status=404
                 )
             item = dict(row)
             item["variables"] = self._loads(item.pop("variables_json"), [])
@@ -2619,7 +2619,7 @@ class PersonaSublimationPlugin(Star):
             ).fetchone()
             if not row:
                 return web.json_response(
-                    {"ok": False, "error": "模板/模块不存在"}, status=404
+                    {"ok": False, "error": "模块不存在"}, status=404
                 )
             conn.execute(
                 "DELETE FROM persona_templates WHERE template_id = ?",
@@ -2645,7 +2645,7 @@ class PersonaSublimationPlugin(Star):
             ).fetchone()
         if not row:
             return web.json_response(
-                {"ok": False, "error": "模板/模块不存在"}, status=404
+                {"ok": False, "error": "模块不存在"}, status=404
             )
         template = dict(row)
         template["metadata"] = self._loads(template.pop("metadata_json"), {})
@@ -2659,7 +2659,7 @@ class PersonaSublimationPlugin(Star):
                 "proposed_prompt": proposed_prompt,
                 "trigger": data.get(
                     "trigger",
-                    f"从模板/模块生成补丁草案：{template.get('name') or template_id}",
+                    f"从模块生成补丁草案：{template.get('name') or template_id}",
                 ),
                 "changes": data.get(
                     "changes",
@@ -2667,7 +2667,7 @@ class PersonaSublimationPlugin(Star):
                         {
                             "aspect": "template",
                             "after": template_id,
-                            "reason": "人工从模板/模块生成补丁草案",
+                            "reason": "人工从模块生成补丁草案",
                         }
                     ],
                 ),
@@ -2943,7 +2943,7 @@ class PersonaSublimationPlugin(Star):
         persona_id: str,
         trigger: str,
         proposed_prompt: str = "",
-        changes: list | None = None,
+        changes_json: str = "",
         notes: str = "",
         base_prompt: str = "",
     ) -> dict[str, Any]:
@@ -2953,7 +2953,7 @@ class PersonaSublimationPlugin(Star):
             persona_id(string): 要起草调整的 persona_id，必须明确指定。
             trigger(string): 起草原因。
             proposed_prompt(string): 拟议 system_prompt；可为空，空则只记录结构化草案。
-            changes(array): 结构化调整项，可为空数组。
+            changes_json(string): 结构化调整项 JSON 字符串，例如 [{"aspect":"tone","after":"更短"}]；可为空。
             notes(string): 给人类审核者看的备注。
             base_prompt(string): 安全检查基线；可为空，空则取当前 persona prompt 作为基线。
         """
@@ -2961,7 +2961,9 @@ class PersonaSublimationPlugin(Star):
             data = {
                 "persona_id": str(persona_id or "").strip(),
                 "trigger": str(trigger or ""),
-                "changes": changes or [],
+                "changes": self._loads(str(changes_json or ""), [])
+                if str(changes_json or "").strip()
+                else [],
                 "notes": str(notes or ""),
                 "metadata": {"created_by": "llm_tool"},
             }
@@ -3130,7 +3132,7 @@ class PersonaSublimationPlugin(Star):
     async def tool_list_templates(
         self, event: AstrMessageEvent, limit: int = 20
     ) -> dict[str, Any]:
-        """列出模板/模块摘要，不展开正文。
+        """列出模块摘要，不展开正文。
 
         Args:
             limit(number): 返回数量，默认 20，最多 100。
@@ -3160,7 +3162,7 @@ class PersonaSublimationPlugin(Star):
         template_id: str,
         include_content: bool = False,
     ) -> dict[str, Any]:
-        """查看模板/模块；默认不展开正文，敏感模块即使请求展开也会隐藏。
+        """查看模块；默认不展开正文，敏感模块即使请求展开也会隐藏。
 
         Args:
             template_id(string): template_id。
@@ -3173,7 +3175,7 @@ class PersonaSublimationPlugin(Star):
                 (template_id,),
             ).fetchone()
         if not row:
-            return {"ok": False, "error": "模板/模块不存在"}
+            return {"ok": False, "error": "模块不存在"}
         item = dict(row)
         for key in ("variables_json", "metadata_json"):
             item[key.removesuffix("_json")] = self._loads(item.pop(key), None)
@@ -3247,11 +3249,11 @@ class PersonaSublimationPlugin(Star):
         template_id: str,
         trigger: str = "",
     ) -> dict[str, Any]:
-        """由某个模板/模块起草 pending 调整，不审批也不应用。
+        """由某个模块起草 pending 调整，不审批也不应用。
 
         Args:
             persona_id(string): 要生成调整草案的目标 persona_id。
-            template_id(string): 模板/模块 ID。
+            template_id(string): 模块 ID。
             trigger(string): 起草原因，可为空。
         """
         persona_id = str(persona_id or "").strip()
@@ -3264,7 +3266,7 @@ class PersonaSublimationPlugin(Star):
                 (template_id,),
             ).fetchone()
         if not row:
-            return {"ok": False, "error": "模板/模块不存在"}
+            return {"ok": False, "error": "模块不存在"}
         template = dict(row)
         for key in ("variables_json", "metadata_json"):
             template[key.removesuffix("_json")] = self._loads(template.pop(key), None)
@@ -3274,12 +3276,12 @@ class PersonaSublimationPlugin(Star):
                     "persona_id": persona_id,
                     "proposed_prompt": str(template.get("content") or ""),
                     "trigger": trigger
-                    or f"由模板/模块起草调整：{template.get('name') or template_id}",
+                    or f"由模块起草调整：{template.get('name') or template_id}",
                     "changes": [
                         {
                             "aspect": "template",
                             "after": template_id,
-                            "reason": "LLM 工具由模板/模块起草，等待人类审核",
+                            "reason": "LLM 工具由模块起草，等待人类审核",
                         }
                     ],
                     "metadata": {
@@ -3293,10 +3295,10 @@ class PersonaSublimationPlugin(Star):
                 "ok": True,
                 **result,
                 "status": "pending",
-                "message": "已由模板/模块起草 pending 调整；请到前端由人类审批/应用。",
+                "message": "已由模块起草 pending 调整；请到前端由人类审批/应用。",
             }
         except Exception as exc:
-            return {"ok": False, "error": f"由模板/模块起草失败：{exc}"}
+            return {"ok": False, "error": f"由模块起草失败：{exc}"}
 
     @filter.llm_tool(name="persona_sublimation_list_persona_modules")
     async def tool_list_persona_modules(
@@ -3323,11 +3325,11 @@ class PersonaSublimationPlugin(Star):
         order_index: int = 0,
         notes: str = "",
     ) -> dict[str, Any]:
-        """把模板/模块资产关联到某个 persona；只记录装配关系，不修改 persona。
+        """把模块资产关联到某个 persona；只记录装配关系，不修改 persona。
 
         Args:
             persona_id(string): 目标 persona_id。
-            template_id(string): 要关联的模板/模块 ID。
+            template_id(string): 要关联的模块 ID。
             role(string): 模块角色，例如 meta/persona/system/nsfw/roleplay/ops/custom。
             enabled(boolean): 是否启用该关联。
             order_index(number): 模块顺序。
@@ -3344,7 +3346,7 @@ class PersonaSublimationPlugin(Star):
                 (template_id,),
             ).fetchone()
             if not exists:
-                return {"ok": False, "error": "模板/模块不存在"}
+                return {"ok": False, "error": "模块不存在"}
             conn.execute(
                 """
                 INSERT INTO persona_module_links
