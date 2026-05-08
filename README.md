@@ -69,6 +69,13 @@ bind_host = 127.0.0.1
 - `GET /api/captures/<id>`：请求快照详情
 - `GET /api/sessions`：有捕获记录的 session 列表
 
+### 调试与数据整理
+
+- `GET /api/debug/data-summary`：返回只含计数、ID、长度、sha256 前缀的安全数据摘要，不返回 prompt/content 正文
+- `POST /api/debug/cleanup`：幂等整理数据模型；默认 dry-run，仅当 body 显式传 `{"apply": true}`、`{"commit": true}` 或 `{"write": true}` 才写库
+
+cleanup 只做保守操作：规范 `persona_templates.metadata.kind/source/role/module_id/content_sha256`、补齐 `lingjiu-2` 的默认模块关联、移除完全相同 `(persona_id, source, content)` 的重复 observation、移除完全相同 `(persona_id, source, source_path, content_sha256)` 的重复 snapshot。不会移除 patch 历史，也不会修改 AstrBot 原版 persona。
+
 ### Persona 视图
 
 - `GET /api/personas`：AstrBot 当前 persona 列表，并展示 observation/patch 计数
@@ -205,6 +212,26 @@ data/plugin_data/astrbot_plugin_persona_sublimation/captures.sqlite3
 - profiles 人格补充资料
 
 如果库异常或过大，可以在停用/停止插件后移除 `captures.sqlite3`。移除后只会丢失本插件保存的历史快照和归档数据，不会移除 AstrBot 原版 persona、长期记忆或核心配置。
+
+## 数据模型
+
+插件当前保留历史表名以兼容旧前端/API，但推荐按以下概念理解：
+
+- `llm_request_captures`（旧文档有时简称 captures）：请求捕获历史，只记录实际发往 LLM 的请求快照，用于追溯上下文；不参与人格装配。
+- `persona_observations`：人格观察。来源可以是人工反馈、LLM tool 留存或旧 skill 迁移；去重只针对完全相同的 `persona_id + source + content`。
+- `persona_patches`：人格调整草案/审批/应用记录。它是审计历史，cleanup 不删除；只有人类审批并通过 base prompt 校验后才会调用 AstrBot `persona_manager.update_persona`。
+- `persona_snapshots`：人格 prompt 版本快照/基线。用于回滚参考或生成 pending patch；不直接写原版 persona。
+- `persona_templates`：兼容表名，新的概念名是 `persona_modules` / “模块资产”。`metadata.kind` 统一为 `module`；`metadata.module_id` 等于稳定的 `template_id`；`metadata.role` 表示 `meta/persona/system/nsfw/roleplay/ops/custom` 等装配角色；`metadata.source` 表示 `manual/skill-migration/data-cleanup` 等来源。
+- `persona_module_links`：persona 与模块资产的装配关系，包含 `persona_id`、`template_id`、`role`、`enabled`、`order_index`、`notes`。它只是清单，不会自动修改 AstrBot persona；需要由模块清单生成 pending patch 后人工审批应用。
+- `persona_profiles`：persona 的补充资料（显示名、原型、备注）。历史字段 `template_id` 仅为兼容旧 UI/API，不再承担模块关联职责；模块关联应使用 `persona_module_links`。
+
+旧 `persona-evolution` skill 迁移策略：
+
+1. observation 以 `source='skill-migration'` 归档，重复内容跳过。
+2. patch 使用旧 `patch_id`；若旧数据没有 `patch_id`，则基于 patch 内容生成稳定 ID，避免重复灌入。
+3. `persona_current_<pid>.md` 作为 snapshot，ID 包含内容 sha256 前缀，重复快照跳过。
+4. 旧 skill 文件迁入 `persona_templates` 但按模块资产管理，稳定 ID 形如 `skill-meta_preamble`、`skill-nsfw_module`。
+5. 对 `lingjiu-2` 幂等补齐默认 `persona_module_links`；这一步只写插件库的装配清单，不写 AstrBot 原版 persona。
 
 ## 容量控制与自 DoS 修复
 
