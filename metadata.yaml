@@ -1,0 +1,30 @@
+name: astrbot_plugin_persona_sublimation
+display_name: 人格升华
+desc: "捕获 LLM 请求快照，并提供人格观察、补丁审批、模板模块、快照基线与多人格 profile API。"
+version: 0.2.0
+author: SGSxingchen
+repo: "https://github.com/SGSxingchen/astrbot_plugin_persona_sublimation"
+support_platforms:
+  - aiocqhttp
+  - qq_official
+  - qq_official_webhook
+  - wecom
+  - wecom_ai_bot
+  - lark
+  - telegram
+  - discord
+  - slack
+  - kook
+  - dingtalk
+  - line
+  - satori
+  - mattermost
+  - misskey
+  - weixin_oc
+  - weixin_official_account
+  - webchat
+keywords:
+  - llm-request
+  - prompt-debug
+  - persona
+  - dashboard

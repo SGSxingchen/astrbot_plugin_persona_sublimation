@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>人格升华 - LLM 请求捕获</title>
+  <style>
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, sans-serif; background:#f6f7fb; color:#172033; }
+    header { padding:18px 24px; background:#20253a; color:white; }
+    main { display:grid; grid-template-columns: 430px 1fr; gap:16px; padding:16px; }
+    input, button { padding:9px 10px; border:1px solid #cfd5e3; border-radius:8px; font-size:14px; }
+    button { cursor:pointer; background:#315cff; color:white; border-color:#315cff; }
+    .panel { background:white; border:1px solid #e2e6ef; border-radius:12px; overflow:hidden; box-shadow:0 1px 6px #0000000d; }
+    .toolbar { display:flex; gap:8px; padding:12px; border-bottom:1px solid #edf0f6; }
+    .toolbar input { flex:1; }
+    .list { max-height: calc(100vh - 155px); overflow:auto; }
+    .item { padding:12px; border-bottom:1px solid #edf0f6; cursor:pointer; }
+    .item:hover, .item.active { background:#f0f4ff; }
+    .meta { color:#667085; font-size:12px; line-height:1.5; }
+    .prompt { margin-top:6px; white-space:pre-wrap; word-break:break-word; }
+    .detail { padding:16px; max-height: calc(100vh - 120px); overflow:auto; }
+    .empty { padding:28px; color:#667085; }
+    .block { margin:14px 0; border:1px solid #d9dfeb; border-radius:10px; overflow:hidden; }
+    .label { padding:8px 10px; font-weight:700; background:#ecf1ff; border-bottom:1px solid #d9dfeb; }
+    .label.system { background:#fff2cc; }
+    .label.context { background:#e9f7ef; }
+    .label.prompt { background:#fdecef; }
+    pre { margin:0; padding:12px; white-space:pre-wrap; word-break:break-word; overflow:auto; line-height:1.45; }
+    code { background:#eef2f8; padding:2px 5px; border-radius:5px; }
+    .tools span { display:inline-block; margin:4px 6px 4px 0; padding:4px 8px; background:#eef2ff; border-radius:999px; }
+    .notice { margin:16px 16px 0; padding:12px 14px; background:#fff7e6; border:1px solid #ffd591; border-radius:12px; color:#5f3b00; }
+    .notice a { color:#315cff; }
+    .evolution { margin:16px 16px 0; display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; }
+    .mini { background:white; border:1px solid #e2e6ef; border-radius:12px; padding:12px; box-shadow:0 1px 6px #0000000d; }
+    .mini h3 { margin:0 0 8px; font-size:15px; }
+    .mini ul { margin:0; padding-left:18px; color:#475467; font-size:13px; line-height:1.7; }
+    .pill { display:inline-block; margin-left:4px; padding:1px 6px; border-radius:999px; background:#eef2ff; color:#315cff; font-size:12px; }
+    @media (max-width: 900px) { main { grid-template-columns:1fr; } .list { max-height: 45vh; } }
+  </style>
+</head>
+<body>
+  <header><h2>人格升华 / LLM 请求捕获与人格迭代</h2></header>
+  <div class="notice">
+    人格迭代 API 已启用：<code>/api/personas</code>、<code>/api/templates</code>、
+    <code>/api/snapshots</code>、<code>/api/observations</code>、<code>/api/patches</code>。
+    页面无内置鉴权，请勿将监听地址暴露到公网。
+  </div>
+  <section class="evolution">
+    <div class="mini"><h3>Personas</h3><ul id="personaStats"><li>加载中...</li></ul></div>
+    <div class="mini"><h3>Templates / Modules</h3><ul id="templateStats"><li>加载中...</li></ul></div>
+    <div class="mini"><h3>Snapshots</h3><ul id="snapshotStats"><li>加载中...</li></ul></div>
+  </section>
+  <main>
+    <section class="panel">
+      <div class="toolbar">
+        <input id="sessionFilter" list="sessions" placeholder="按 session_id 过滤" />
+        <datalist id="sessions"></datalist>
+        <button id="reloadBtn">刷新</button>
+      </div>
+      <div id="list" class="list"><div class="empty">加载中...</div></div>
+    </section>
+    <section class="panel"><div id="detail" class="detail"><div class="empty">点击左侧记录查看详情。</div></div></section>
+  </main>
+<script>
+const apiBase = './api';
+const $ = (id) => document.getElementById(id);
+let activeId = null;
+function esc(s){return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function textLen(v){ return typeof v === 'string' ? v.length : JSON.stringify(v ?? '').length; }
+function preview(s, n=80){ s = String(s ?? '').replace(/\s+/g,' ').trim(); return s.length > n ? s.slice(0,n) + '…' : s; }
+
+async function loadEvolution(){
+  try {
+    const profiles = await fetch(`${apiBase}/profiles`).then(r=>r.json());
+    if (profiles.ok) {
+      $('personaStats').innerHTML = profiles.items.map(it => `<li><b>${esc(it.persona_id)}</b> <span class="pill">obs ${esc(it.observation_count)}</span><span class="pill">patch ${esc(it.patch_count)}</span></li>`).join('') || '<li>暂无 persona</li>';
+    }
+  } catch (e) { $('personaStats').innerHTML = '<li>加载失败</li>'; }
+  try {
+    const templates = await fetch(`${apiBase}/templates`).then(r=>r.json());
+    if (templates.ok) {
+      $('templateStats').innerHTML = templates.items.slice(0,8).map(it => `<li title="${esc(it.template_id)}">${esc(it.name || it.template_id)} <span class="pill">${esc(it.metadata?.kind || 'template')}</span></li>`).join('') || '<li>暂无模板</li>';
+    }
+  } catch (e) { $('templateStats').innerHTML = '<li>加载失败</li>'; }
+  try {
+    const snaps = await fetch(`${apiBase}/snapshots?limit=8`).then(r=>r.json());
+    if (snaps.ok) {
+      $('snapshotStats').innerHTML = snaps.items.map(it => `<li><b>${esc(it.persona_id)}</b> ${esc(it.label || it.snapshot_id)}</li>`).join('') || '<li>暂无快照</li>';
+    }
+  } catch (e) { $('snapshotStats').innerHTML = '<li>加载失败</li>'; }
+}
+
+async function loadSessions(){
+  try {
+    const data = await fetch(`${apiBase}/sessions`).then(r=>r.json());
+    if (data.ok) {
+      $('sessions').innerHTML = data.items.map(s => `<option value="${esc(s.session_id)}">${esc(s.count)} 条 · ${esc(s.last_timestamp_iso)}</option>`).join('');
+    }
+  } catch (_) {}
+}
+async function loadList(){
+  const session = $('sessionFilter').value.trim();
+  const url = `${apiBase}/captures?limit=80` + (session ? `&session_id=${encodeURIComponent(session)}` : '');
+  const data = await fetch(url).then(r=>r.json());
+  if(!data.ok){ $('list').innerHTML = `<div class="empty">加载失败：${esc(data.error)}</div>`; return; }
+  if(!data.items.length){ $('list').innerHTML = '<div class="empty">暂无记录。</div>'; return; }
+  $('list').innerHTML = data.items.map(it => `
+    <div class="item ${it.id===activeId?'active':''}" data-id="${it.id}">
+      <div class="meta">#${it.id} · ${esc(it.timestamp_iso)}<br>session: ${esc(it.session_id)}<br>${esc(it.platform)} · ${esc(it.sender_name || it.sender_id || '')}</div>
+      <div class="prompt">${esc(preview(it.prompt, 80))}</div>
+    </div>`).join('');
+  document.querySelectorAll('.item').forEach(el => el.onclick = () => loadDetail(Number(el.dataset.id)));
+}
+function renderField(value){
+  if(value === null || value === undefined) return 'null';
+  if(typeof value === 'string') return value.length ? esc(value) : '(empty)';
+  if(Array.isArray(value) && value.length === 0) return '(empty)';
+  if(typeof value === 'object' && Object.keys(value).length === 0) return '(empty)';
+  return esc(JSON.stringify(value, null, 2));
+}
+async function loadDetail(id){
+  activeId = id;
+  loadSessions();
+  loadList();
+  const data = await fetch(`${apiBase}/captures/${id}`).then(r=>r.json());
+  if(!data.ok){ $('detail').innerHTML = `<div class="empty">加载失败：${esc(data.error)}</div>`; return; }
+  const it = data.item;
+  const fields = [
+    ['prompt', it.prompt],
+    ['session_id', it.session_id],
+    ['image_urls', it.image_urls],
+    ['audio_urls', it.audio_urls],
+    ['extra_user_content_parts', it.extra_user_content_parts],
+    ['func_tool', it.func_tool],
+    ['contexts', it.contexts],
+    ['system_prompt', it.system_prompt],
+    ['tool_calls_result', it.tool_calls_result],
+    ['model', it.model],
+  ];
+  const fieldHtml = fields.map(([name, value]) => `
+    <div class="block">
+      <div class="label">${esc(name)}</div>
+      <pre>${renderField(value)}</pre>
+    </div>`).join('');
+  $('detail').innerHTML = `
+    <h3>请求 #${it.id}</h3>
+    <p class="meta">${esc(it.timestamp_iso)} · origin: ${esc(it.unified_msg_origin)} · sender: ${esc(it.sender_name || it.sender_id || '')}</p>
+    ${fieldHtml}
+  `;
+}
+$('reloadBtn').onclick = loadList;
+$('sessionFilter').addEventListener('keydown', e => { if(e.key === 'Enter') loadEvolution();
+loadSessions();
+loadList(); });
+loadEvolution();
+loadSessions();
+loadList();
+</script>
+</body>
+</html>

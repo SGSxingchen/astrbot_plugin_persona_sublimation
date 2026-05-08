@@ -1,0 +1,32 @@
+{
+  "enabled": {
+    "description": "启用捕获",
+    "type": "bool",
+    "hint": "关闭后不会记录新的 LLM 请求快照，历史记录仍可在页面查看。",
+    "default": true
+  },
+  "max_records": {
+    "description": "最大记录条数",
+    "type": "int",
+    "hint": "超过该条数后自动滚动删除最早记录。",
+    "default": 500
+  },
+  "capture_full_contexts": {
+    "description": "完整保存 contexts",
+    "type": "bool",
+    "hint": "关闭时只保存每条 context 的 role、长度和内容预览，避免数据库过大。",
+    "default": true
+  },
+  "bind_host": {
+    "description": "前端服务监听地址（高风险项）",
+    "type": "string",
+    "hint": "默认只监听本机 127.0.0.1。页面无内置鉴权，会展示完整 prompts/contexts；若改为 0.0.0.0/:: 将暴露敏感请求快照，必须自行加反向代理、访问控制和鉴权。",
+    "default": "127.0.0.1"
+  },
+  "port": {
+    "description": "前端服务端口",
+    "type": "int",
+    "hint": "独立 HTTP 服务端口，默认 7833。",
+    "default": 7833
+  }
+}
